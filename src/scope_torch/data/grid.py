@@ -34,7 +34,7 @@ class ScopeGridDataModule:
 
     def iter_batches(self) -> Iterable[Mapping[str, torch.Tensor]]:
         stacked = self._stack_dataset()
-        total = stacked.dims["batch"]
+        total = stacked.sizes["batch"]
         tensor_map = {var: self._to_tensor(stacked[var]) for var in self.required_vars}
         for chunk in self.config.chunks(total):
             yield {var: tensor[chunk] for var, tensor in tensor_map.items()}

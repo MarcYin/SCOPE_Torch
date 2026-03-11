@@ -20,7 +20,7 @@ def test_grid_module_batches():
     cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], chunk_size=3)
     module = ScopeGridDataModule(data, cfg, required_vars=["Rin", "LAI"])
     batches = list(module.iter_batches())
-    total = data.dims["y"] * data.dims["x"] * data.dims["time"]
+    total = data.sizes["y"] * data.sizes["x"] * data.sizes["time"]
     assert len(batches) == int(np.ceil(total / cfg.chunk_size))
     assert batches[0]["Rin"].shape[0] == 3
     assert batches[-1]["LAI"].ndim == 1

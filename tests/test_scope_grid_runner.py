@@ -8,6 +8,7 @@ from scope_torch.config import SimulationConfig
 from scope_torch.data import ScopeGridDataModule
 from scope_torch.runners.grid import ScopeGridRunner
 from scope_torch.spectral.fluspect import FluspectModel, LeafBioBatch, OptiPar, SpectralGrids
+from scope_torch.spectral.loaders import load_soil_spectra
 
 
 def _spectral(device, dtype):
@@ -97,6 +98,85 @@ def test_scope_grid_runner_matches_manual():
             leafopt.refl,
             leafopt.tran,
             soil_tensor,
+            torch.tensor([float(stacked["LAI"].sel(**idx))], device=device, dtype=dtype),
+            torch.tensor([runner.default_hotspot], device=device, dtype=dtype),
+            torch.tensor([float(stacked["tts"].sel(**idx))], device=device, dtype=dtype),
+            torch.tensor([float(stacked["tto"].sel(**idx))], device=device, dtype=dtype),
+            torch.tensor([float(stacked["psi"].sel(**idx))], device=device, dtype=dtype),
+            lidf=lidf,
+        )
+        manual_rsot.append(sail_out.rsot)
+        manual_rdd.append(sail_out.rdd)
+
+    manual_leaf_refl = torch.cat([r for r, _ in manual_leaf], dim=0)
+    manual_leaf_tran = torch.cat([t for _, t in manual_leaf], dim=0)
+    manual_rsot = torch.cat(manual_rsot, dim=0)
+    manual_rdd = torch.cat(manual_rdd, dim=0)
+
+    assert torch.allclose(outputs["leaf_refl"], manual_leaf_refl)
+    assert torch.allclose(outputs["leaf_tran"], manual_leaf_tran)
+    assert torch.allclose(outputs["rsot"], manual_rsot)
+    assert torch.allclose(outputs["rdd"], manual_rdd)
+
+
+def test_scope_grid_runner_from_scope_assets_resolves_soil_spectrum():
+    device = torch.device("cpu")
+    dtype = torch.float64
+    lidf = campbell_lidf(57.0, device=device, dtype=dtype)
+    runner = ScopeGridRunner.from_scope_assets(lidf=lidf, device=device, dtype=dtype)
+
+    times = pd.date_range("2020-07-01", periods=2, freq="h")
+    y = np.arange(1)
+    x = np.arange(1)
+    data = xr.Dataset(
+        {
+            "Cab": (("y", "x", "time"), np.full((1, 1, 2), 45.0)),
+            "Cw": (("y", "x", "time"), np.full((1, 1, 2), 0.01)),
+            "Cdm": (("y", "x", "time"), np.full((1, 1, 2), 0.012)),
+            "LAI": (("y", "x", "time"), np.array([[[2.0, 2.5]]])),
+            "tts": (("y", "x", "time"), np.full((1, 1, 2), 30.0)),
+            "tto": (("y", "x", "time"), np.full((1, 1, 2), 20.0)),
+            "psi": (("y", "x", "time"), np.array([[[5.0, 15.0]]])),
+            "soil_spectrum": (("y", "x", "time"), np.array([[[1.0, 3.0]]])),
+        },
+        coords={"y": y, "x": x, "time": times},
+    )
+
+    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], chunk_size=2)
+    module = ScopeGridDataModule(data, cfg, required_vars=["Cab", "Cw", "Cdm", "LAI", "tts", "tto", "psi", "soil_spectrum"])
+    outputs = runner.run(
+        module,
+        varmap={
+            "Cab": "Cab",
+            "Cw": "Cw",
+            "Cdm": "Cdm",
+            "LAI": "LAI",
+            "tts": "tts",
+            "tto": "tto",
+            "psi": "psi",
+            "soil_spectrum": "soil_spectrum",
+        },
+    )
+
+    soil_library = load_soil_spectra(device=device, dtype=dtype)
+    stacked = data.stack(batch=("y", "x", "time"))
+    manual_leaf = []
+    manual_rsot = []
+    manual_rdd = []
+    for label in stacked["Cab"].indexes["batch"]:
+        idx = dict(batch=label)
+        leafbio = LeafBioBatch(
+            Cab=torch.tensor([float(stacked["Cab"].sel(**idx))], device=device, dtype=dtype),
+            Cw=torch.tensor([float(stacked["Cw"].sel(**idx))], device=device, dtype=dtype),
+            Cdm=torch.tensor([float(stacked["Cdm"].sel(**idx))], device=device, dtype=dtype),
+        )
+        leafopt = runner.fluspect(leafbio)
+        manual_leaf.append((leafopt.refl, leafopt.tran))
+        soil_idx = torch.tensor([float(stacked["soil_spectrum"].sel(**idx))], device=device, dtype=dtype)
+        sail_out = runner.sail(
+            leafopt.refl,
+            leafopt.tran,
+            soil_library.batch(soil_idx),
             torch.tensor([float(stacked["LAI"].sel(**idx))], device=device, dtype=dtype),
             torch.tensor([runner.default_hotspot], device=device, dtype=dtype),
             torch.tensor([float(stacked["tts"].sel(**idx))], device=device, dtype=dtype),

@@ -90,6 +90,38 @@ class FluspectModel:
         self.ndub = ndub
         self.step = doublings_step
 
+    @classmethod
+    def from_scope_assets(
+        cls,
+        path: str | None = None,
+        *,
+        scope_root_path: str | None = None,
+        device: Optional[torch.device | str] = None,
+        dtype: torch.dtype = torch.float32,
+        ndub: int = 15,
+        doublings_step: int = 5,
+        wlF: Optional[torch.Tensor] = None,
+        wlE: Optional[torch.Tensor] = None,
+    ) -> "FluspectModel":
+        from .loaders import load_fluspect_resources
+
+        resources = load_fluspect_resources(
+            path,
+            scope_root_path=scope_root_path,
+            device=device,
+            dtype=dtype,
+            wlF=wlF,
+            wlE=wlE,
+        )
+        return cls(
+            resources.spectral,
+            resources.optipar,
+            ndub=ndub,
+            doublings_step=doublings_step,
+            device=device,
+            dtype=dtype,
+        )
+
     def __call__(self, leafbio: LeafBioBatch) -> LeafOptics:
         batch_size, tensors = self._prepare_leafbio(leafbio)
         spectral = self.spectral

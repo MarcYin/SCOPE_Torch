@@ -23,8 +23,15 @@ dependencies = [
 dev = [
     "pytest>=8.1",
     "pytest-cov>=4.1",
+    "prosail>=2.0",
     "rich>=13.7"
 ]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"
