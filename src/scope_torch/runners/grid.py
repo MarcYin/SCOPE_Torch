@@ -6,6 +6,7 @@ import torch
 
 from ..canopy.fluorescence import CanopyFluorescenceModel, CanopyFluorescenceResult
 from ..canopy.reflectance import CanopyReflectanceModel, CanopyReflectanceResult
+from ..canopy.thermal import CanopyThermalRadianceModel, CanopyThermalRadianceResult, ThermalOptics
 from ..canopy.foursail import FourSAILModel
 from ..spectral.fluspect import FluspectModel, LeafBioBatch
 from ..spectral.loaders import SoilSpectraLibrary, load_fluspect_resources, load_soil_spectra
@@ -44,6 +45,7 @@ class ScopeGridRunner:
             soil_index_base=soil_index_base,
         )
         self.fluorescence_model = CanopyFluorescenceModel(self.reflectance_model)
+        self.thermal_model = CanopyThermalRadianceModel(self.reflectance_model)
 
     @classmethod
     def from_scope_assets(
@@ -166,6 +168,97 @@ class ScopeGridRunner:
 
         return {name: torch.cat(chunks, dim=0) for name, chunks in outputs.items()}
 
+    def run_layered_fluorescence(
+        self,
+        data_module: ScopeGridDataModule,
+        *,
+        varmap: Mapping[str, str],
+        hotspot_var: Optional[str] = None,
+        nlayers: Optional[int] = None,
+    ) -> Dict[str, torch.Tensor]:
+        outputs: dict[str, list[torch.Tensor]] = {name: [] for name in CanopyFluorescenceResult.__dataclass_fields__}
+        for batch in data_module.iter_batches():
+            leaf_kwargs = self._leafbio_kwargs(batch, varmap)
+            leafbio = LeafBioBatch(**leaf_kwargs)
+            lai = batch[varmap["LAI"]]
+            tts = batch[varmap["tts"]]
+            tto = batch[varmap["tto"]]
+            psi = batch[varmap["psi"]]
+            Esun = self._spectral_input(batch, varmap, "Esun_")
+            Esky = self._spectral_input(batch, varmap, "Esky_")
+            soil = self._soil_refl(batch, varmap)
+            etau = batch[varmap["etau"]] if "etau" in varmap and varmap["etau"] in batch else None
+            etah = batch[varmap["etah"]] if "etah" in varmap and varmap["etah"] in batch else None
+            if hotspot_var and hotspot_var in batch:
+                hotspot = batch[hotspot_var]
+            else:
+                hotspot = torch.full_like(lai, self.default_hotspot)
+
+            result = self.fluorescence_model.layered(
+                leafbio,
+                soil,
+                lai,
+                tts,
+                tto,
+                psi,
+                Esun,
+                Esky,
+                etau=etau,
+                etah=etah,
+                hotspot=hotspot,
+                nlayers=self._layer_count(nlayers, etau=etau, etah=etah, Tcu=None, Tch=None),
+            )
+            for name in outputs:
+                outputs[name].append(getattr(result, name))
+
+        return {name: torch.cat(chunks, dim=0) for name, chunks in outputs.items()}
+
+    def run_thermal(
+        self,
+        data_module: ScopeGridDataModule,
+        *,
+        varmap: Mapping[str, str],
+        hotspot_var: Optional[str] = None,
+        nlayers: Optional[int] = None,
+    ) -> Dict[str, torch.Tensor]:
+        outputs: dict[str, list[torch.Tensor]] = {name: [] for name in CanopyThermalRadianceResult.__dataclass_fields__}
+        for batch in data_module.iter_batches():
+            lai = batch[varmap["LAI"]]
+            tts = batch[varmap["tts"]]
+            tto = batch[varmap["tto"]]
+            psi = batch[varmap["psi"]]
+            Tcu = batch[varmap["Tcu"]]
+            Tch = batch[varmap["Tch"]]
+            Tsu = batch[varmap["Tsu"]]
+            Tsh = batch[varmap["Tsh"]]
+            if hotspot_var and hotspot_var in batch:
+                hotspot = batch[hotspot_var]
+            else:
+                hotspot = torch.full_like(lai, self.default_hotspot)
+            thermal_optics = ThermalOptics(
+                rho_thermal=batch[varmap["rho_thermal"]] if "rho_thermal" in varmap and varmap["rho_thermal"] in batch else 0.01,
+                tau_thermal=batch[varmap["tau_thermal"]] if "tau_thermal" in varmap and varmap["tau_thermal"] in batch else 0.01,
+                rs_thermal=batch[varmap["rs_thermal"]] if "rs_thermal" in varmap and varmap["rs_thermal"] in batch else 0.06,
+            )
+
+            result = self.thermal_model(
+                lai,
+                tts,
+                tto,
+                psi,
+                Tcu,
+                Tch,
+                Tsu,
+                Tsh,
+                thermal_optics=thermal_optics,
+                hotspot=hotspot,
+                nlayers=self._layer_count(nlayers, etau=None, etah=None, Tcu=Tcu, Tch=Tch),
+            )
+            for name in outputs:
+                outputs[name].append(getattr(result, name))
+
+        return {name: torch.cat(chunks, dim=0) for name, chunks in outputs.items()}
+
     def _leafbio_kwargs(self, batch: Mapping[str, torch.Tensor], varmap: Mapping[str, str]) -> Dict[str, torch.Tensor]:
         kwargs: Dict[str, torch.Tensor] = {}
         for field in LeafBioBatch.__dataclass_fields__:
@@ -177,6 +270,28 @@ class ScopeGridRunner:
         if "excitation" not in varmap or varmap["excitation"] not in batch:
             raise KeyError("varmap must provide 'excitation' for fluorescence runs")
         return batch[varmap["excitation"]]
+
+    def _spectral_input(self, batch: Mapping[str, torch.Tensor], varmap: Mapping[str, str], key: str) -> torch.Tensor:
+        if key not in varmap or varmap[key] not in batch:
+            raise KeyError(f"varmap must provide '{key}'")
+        return batch[varmap[key]]
+
+    def _layer_count(
+        self,
+        nlayers: Optional[int],
+        *,
+        etau: Optional[torch.Tensor],
+        etah: Optional[torch.Tensor],
+        Tcu: Optional[torch.Tensor],
+        Tch: Optional[torch.Tensor],
+    ) -> Optional[int]:
+        for value in (etau, etah, Tcu, Tch):
+            if value is None:
+                continue
+            tensor = torch.as_tensor(value)
+            if tensor.ndim >= 2:
+                return int(tensor.shape[1])
+        return nlayers
 
     def _soil_refl(self, batch: Mapping[str, torch.Tensor], varmap: Mapping[str, str]) -> torch.Tensor:
         if "soil_refl" in varmap and varmap["soil_refl"] in batch:
