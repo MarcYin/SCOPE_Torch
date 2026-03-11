@@ -4,11 +4,37 @@ import torch
 import xarray as xr
 
 from scope_torch.canopy.foursail import FourSAILModel, campbell_lidf
+from scope_torch.canopy.reflectance import CanopyReflectanceModel
 from scope_torch.config import SimulationConfig
 from scope_torch.data import ScopeGridDataModule
 from scope_torch.runners.grid import ScopeGridRunner
 from scope_torch.spectral.fluspect import FluspectModel, LeafBioBatch, OptiPar, SpectralGrids
 from scope_torch.spectral.loaders import load_soil_spectra
+
+
+CANOPY_KEYS = [
+    "rdd",
+    "tdd",
+    "rsd",
+    "tsd",
+    "rdo",
+    "tdo",
+    "rso",
+    "rsos",
+    "rsod",
+    "rddt",
+    "rsdt",
+    "rdot",
+    "rsodt",
+    "rsost",
+    "rsot",
+    "tss",
+    "too",
+    "tsstoo",
+    "gammasdf",
+    "gammasdb",
+    "gammaso",
+]
 
 
 def _spectral(device, dtype):
@@ -81,9 +107,8 @@ def test_scope_grid_runner_matches_manual():
     )
 
     stacked = data.stack(batch=("y", "x", "time"))
-    manual_leaf = []
-    manual_rsot = []
-    manual_rdd = []
+    reflectance_model = CanopyReflectanceModel(fluspect, sail, lidf=lidf, default_hotspot=runner.default_hotspot)
+    manual_outputs: dict[str, list[torch.Tensor]] = {"leaf_refl": [], "leaf_tran": [], **{key: [] for key in CANOPY_KEYS}}
     for label in stacked["Cab"].indexes["batch"]:
         idx = dict(batch=label)
         leafbio = LeafBioBatch(
@@ -91,32 +116,23 @@ def test_scope_grid_runner_matches_manual():
             Cw=torch.tensor([float(stacked["Cw"].sel(**idx))], device=device, dtype=dtype),
             Cdm=torch.tensor([float(stacked["Cdm"].sel(**idx))], device=device, dtype=dtype),
         )
-        leafopt = fluspect(leafbio)
-        manual_leaf.append((leafopt.refl, leafopt.tran))
         soil_tensor = torch.tensor(stacked["soil_refl"].sel(**idx).values, device=device, dtype=dtype).unsqueeze(0)
-        sail_out = sail(
-            leafopt.refl,
-            leafopt.tran,
+        reflectance_out = reflectance_model(
+            leafbio,
             soil_tensor,
             torch.tensor([float(stacked["LAI"].sel(**idx))], device=device, dtype=dtype),
-            torch.tensor([runner.default_hotspot], device=device, dtype=dtype),
             torch.tensor([float(stacked["tts"].sel(**idx))], device=device, dtype=dtype),
             torch.tensor([float(stacked["tto"].sel(**idx))], device=device, dtype=dtype),
             torch.tensor([float(stacked["psi"].sel(**idx))], device=device, dtype=dtype),
-            lidf=lidf,
+            hotspot=torch.tensor([runner.default_hotspot], device=device, dtype=dtype),
         )
-        manual_rsot.append(sail_out.rsot)
-        manual_rdd.append(sail_out.rdd)
+        for key in manual_outputs:
+            manual_outputs[key].append(getattr(reflectance_out, key))
 
-    manual_leaf_refl = torch.cat([r for r, _ in manual_leaf], dim=0)
-    manual_leaf_tran = torch.cat([t for _, t in manual_leaf], dim=0)
-    manual_rsot = torch.cat(manual_rsot, dim=0)
-    manual_rdd = torch.cat(manual_rdd, dim=0)
-
-    assert torch.allclose(outputs["leaf_refl"], manual_leaf_refl)
-    assert torch.allclose(outputs["leaf_tran"], manual_leaf_tran)
-    assert torch.allclose(outputs["rsot"], manual_rsot)
-    assert torch.allclose(outputs["rdd"], manual_rdd)
+    expected_keys = {"leaf_refl", "leaf_tran", *CANOPY_KEYS}
+    assert set(outputs) == expected_keys
+    for key, values in manual_outputs.items():
+        assert torch.allclose(outputs[key], torch.cat(values, dim=0))
 
 
 def test_scope_grid_runner_from_scope_assets_resolves_soil_spectrum():
@@ -159,10 +175,9 @@ def test_scope_grid_runner_from_scope_assets_resolves_soil_spectrum():
     )
 
     soil_library = load_soil_spectra(device=device, dtype=dtype)
+    reflectance_model = CanopyReflectanceModel(runner.fluspect, runner.sail, lidf=lidf, default_hotspot=runner.default_hotspot)
     stacked = data.stack(batch=("y", "x", "time"))
-    manual_leaf = []
-    manual_rsot = []
-    manual_rdd = []
+    manual_outputs: dict[str, list[torch.Tensor]] = {"leaf_refl": [], "leaf_tran": [], **{key: [] for key in CANOPY_KEYS}}
     for label in stacked["Cab"].indexes["batch"]:
         idx = dict(batch=label)
         leafbio = LeafBioBatch(
@@ -170,29 +185,18 @@ def test_scope_grid_runner_from_scope_assets_resolves_soil_spectrum():
             Cw=torch.tensor([float(stacked["Cw"].sel(**idx))], device=device, dtype=dtype),
             Cdm=torch.tensor([float(stacked["Cdm"].sel(**idx))], device=device, dtype=dtype),
         )
-        leafopt = runner.fluspect(leafbio)
-        manual_leaf.append((leafopt.refl, leafopt.tran))
         soil_idx = torch.tensor([float(stacked["soil_spectrum"].sel(**idx))], device=device, dtype=dtype)
-        sail_out = runner.sail(
-            leafopt.refl,
-            leafopt.tran,
+        reflectance_out = reflectance_model(
+            leafbio,
             soil_library.batch(soil_idx),
             torch.tensor([float(stacked["LAI"].sel(**idx))], device=device, dtype=dtype),
-            torch.tensor([runner.default_hotspot], device=device, dtype=dtype),
             torch.tensor([float(stacked["tts"].sel(**idx))], device=device, dtype=dtype),
             torch.tensor([float(stacked["tto"].sel(**idx))], device=device, dtype=dtype),
             torch.tensor([float(stacked["psi"].sel(**idx))], device=device, dtype=dtype),
-            lidf=lidf,
+            hotspot=torch.tensor([runner.default_hotspot], device=device, dtype=dtype),
         )
-        manual_rsot.append(sail_out.rsot)
-        manual_rdd.append(sail_out.rdd)
+        for key in manual_outputs:
+            manual_outputs[key].append(getattr(reflectance_out, key))
 
-    manual_leaf_refl = torch.cat([r for r, _ in manual_leaf], dim=0)
-    manual_leaf_tran = torch.cat([t for _, t in manual_leaf], dim=0)
-    manual_rsot = torch.cat(manual_rsot, dim=0)
-    manual_rdd = torch.cat(manual_rdd, dim=0)
-
-    assert torch.allclose(outputs["leaf_refl"], manual_leaf_refl)
-    assert torch.allclose(outputs["leaf_tran"], manual_leaf_tran)
-    assert torch.allclose(outputs["rsot"], manual_rsot)
-    assert torch.allclose(outputs["rdd"], manual_rdd)
+    for key, values in manual_outputs.items():
+        assert torch.allclose(outputs[key], torch.cat(values, dim=0))

@@ -4,6 +4,7 @@ from typing import Dict, Mapping, Optional
 
 import torch
 
+from ..canopy.reflectance import CanopyReflectanceModel, CanopyReflectanceResult
 from ..canopy.foursail import FourSAILModel
 from ..spectral.fluspect import FluspectModel, LeafBioBatch
 from ..spectral.loaders import SoilSpectraLibrary, load_soil_spectra
@@ -29,6 +30,12 @@ class ScopeGridRunner:
         self.default_hotspot = default_hotspot
         self.soil_spectra = soil_spectra
         self.soil_index_base = soil_index_base
+        self.reflectance_model = CanopyReflectanceModel(
+            fluspect,
+            sail,
+            lidf=lidf,
+            default_hotspot=default_hotspot,
+        )
 
     @classmethod
     def from_scope_assets(
@@ -77,17 +84,10 @@ class ScopeGridRunner:
         varmap: Mapping[str, str],
         hotspot_var: Optional[str] = None,
     ) -> Dict[str, torch.Tensor]:
-        leaf_refl: list[torch.Tensor] = []
-        leaf_tran: list[torch.Tensor] = []
-        canopy_rsot: list[torch.Tensor] = []
-        canopy_rdd: list[torch.Tensor] = []
+        outputs: dict[str, list[torch.Tensor]] = {name: [] for name in CanopyReflectanceResult.__dataclass_fields__}
         for batch in data_module.iter_batches():
             leaf_kwargs = self._leafbio_kwargs(batch, varmap)
             leafbio = LeafBioBatch(**leaf_kwargs)
-            leafopt = self.fluspect(leafbio)
-            leaf_refl.append(leafopt.refl)
-            leaf_tran.append(leafopt.tran)
-
             lai = batch[varmap["LAI"]]
             tts = batch[varmap["tts"]]
             tto = batch[varmap["tto"]]
@@ -98,26 +98,19 @@ class ScopeGridRunner:
             else:
                 hotspot = torch.full_like(lai, self.default_hotspot)
 
-            sail_out = self.sail(
-                leafopt.refl,
-                leafopt.tran,
+            result = self.reflectance_model(
+                leafbio,
                 soil,
                 lai,
-                hotspot,
                 tts,
                 tto,
                 psi,
-                lidf=self.lidf,
+                hotspot=hotspot,
             )
-            canopy_rsot.append(sail_out.rsot)
-            canopy_rdd.append(sail_out.rdd)
+            for name in outputs:
+                outputs[name].append(getattr(result, name))
 
-        return {
-            "leaf_refl": torch.cat(leaf_refl, dim=0),
-            "leaf_tran": torch.cat(leaf_tran, dim=0),
-            "rsot": torch.cat(canopy_rsot, dim=0),
-            "rdd": torch.cat(canopy_rdd, dim=0),
-        }
+        return {name: torch.cat(chunks, dim=0) for name, chunks in outputs.items()}
 
     def _leafbio_kwargs(self, batch: Mapping[str, torch.Tensor], varmap: Mapping[str, str]) -> Dict[str, torch.Tensor]:
         kwargs: Dict[str, torch.Tensor] = {}
