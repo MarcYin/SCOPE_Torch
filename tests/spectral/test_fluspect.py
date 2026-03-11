@@ -45,7 +45,7 @@ def _make_optipar(spectral: SpectralGrids) -> OptiPar:
     )
 
 
-def _make_leafbio(batch: int, device, dtype) -> LeafBioBatch:
+def _make_leafbio(batch: int, device, dtype, *, fqe: float = 0.0) -> LeafBioBatch:
     Cab = torch.full((batch,), 40.0, device=device, dtype=dtype)
     return LeafBioBatch(
         Cab=Cab,
@@ -58,7 +58,7 @@ def _make_leafbio(batch: int, device, dtype) -> LeafBioBatch:
         Cp=torch.zeros(batch, device=device, dtype=dtype),
         Cbc=torch.zeros(batch, device=device, dtype=dtype),
         N=torch.full((batch,), 1.5, device=device, dtype=dtype),
-        fqe=torch.zeros(batch, device=device, dtype=dtype),
+        fqe=torch.full((batch,), fqe, device=device, dtype=dtype),
     )
 
 
@@ -103,6 +103,13 @@ def _stack_layers_np(r, t, N):
     return Rsub, Tsub
 
 
+def _interp1d_np(xp, fp_batch, target):
+    out = np.empty((fp_batch.shape[0], target.shape[0]), dtype=fp_batch.dtype)
+    for i in range(fp_batch.shape[0]):
+        out[i] = np.interp(target, xp, fp_batch[i])
+    return out
+
+
 def _fluspect_numpy(optipar: OptiPar, leafbio: LeafBioBatch, spectral: SpectralGrids):
     wl = spectral.wlP.cpu().numpy()
     nr = optipar.nr.cpu().numpy()
@@ -112,6 +119,7 @@ def _fluspect_numpy(optipar: OptiPar, leafbio: LeafBioBatch, spectral: SpectralG
     Kw = optipar.Kw.cpu().numpy()
     Ks = optipar.Ks.cpu().numpy()
     Kant = optipar.Kant.cpu().numpy()
+    phi = optipar.phi.cpu().numpy()
 
     Cab = leafbio.Cab.cpu().numpy()
     Cca = (leafbio.Cca if leafbio.Cca is not None else leafbio.Cab * 0.25).cpu().numpy()
@@ -120,6 +128,7 @@ def _fluspect_numpy(optipar: OptiPar, leafbio: LeafBioBatch, spectral: SpectralG
     Cs = leafbio.Cs.cpu().numpy()
     Cant = leafbio.Cant.cpu().numpy()
     N = leafbio.N.cpu().numpy()
+    fqe = leafbio.fqe.cpu().numpy()
 
     numerator = Cab[:, None] * Kab
     numerator += Cca[:, None] * Kca
@@ -132,6 +141,12 @@ def _fluspect_numpy(optipar: OptiPar, leafbio: LeafBioBatch, spectral: SpectralG
     t1 = (1 - Kall) * np.exp(-Kall)
     t2 = (Kall**2) * exp1(np.maximum(Kall, 1e-9))
     tau = np.where(Kall > 0, t1 + t2, 1.0)
+
+    kChlrel = np.zeros_like(Kall)
+    kCarrel = np.zeros_like(Kall)
+    mask = Kall > 0
+    np.divide(Cab[:, None] * Kab[None, :], Kall * N[:, None], out=kChlrel, where=mask)
+    np.divide(Cca[:, None] * Kca[None, :], Kall * N[:, None], out=kCarrel, where=mask)
 
     talf = _calctav_np(59.0, nr)[None, :]
     ralf = 1 - talf
@@ -150,7 +165,110 @@ def _fluspect_numpy(optipar: OptiPar, leafbio: LeafBioBatch, spectral: SpectralG
     denom2 = 1 - Rsub * r
     tran = Ta * Tsub / denom2
     refl = Ra + Ta * Rsub * t / denom2
-    return refl, tran
+
+    Rb = (refl - ralf) / (talf * t21 + (refl - ralf) * r21)
+    Z = tran * (1 - Rb * r21) / (talf * t21)
+    rho_core = (Rb - r21 * Z**2) / (1 - (r21 * Z) ** 2)
+    tau_core = (1 - Rb * r21) / (1 - (r21 * Z) ** 2) * Z
+    rho = np.maximum(rho_core, 0.0)
+    tau_meso = tau_core
+
+    sum_rt = rho + tau_meso
+    I_rt = sum_rt < 1 - 1e-9
+    D = np.zeros_like(rho)
+    temp = (1 + rho + tau_meso) * (1 + rho - tau_meso) * (1 - rho + tau_meso) * (1 - rho - tau_meso)
+    D[I_rt] = np.sqrt(np.maximum(temp[I_rt], 0.0))
+    a = np.ones_like(rho)
+    b = np.ones_like(rho)
+    safe_r = np.maximum(rho, 1e-9)
+    safe_t = np.maximum(tau_meso, 1e-9)
+    a[I_rt] = (1 + rho[I_rt] ** 2 - tau_meso[I_rt] ** 2 + D[I_rt]) / (2 * safe_r[I_rt])
+    b[I_rt] = (1 - rho[I_rt] ** 2 + tau_meso[I_rt] ** 2 + D[I_rt]) / (2 * safe_t[I_rt])
+
+    s = np.divide(rho, tau_meso, out=np.zeros_like(rho), where=tau_meso != 0)
+    logb = np.log(np.maximum(b, 1e-12))
+    I_a = (a > 1) & np.isfinite(a)
+    s[I_a] = 2 * a[I_a] / (a[I_a] ** 2 - 1) * logb[I_a]
+    k = logb.copy()
+    k[I_a] = (a[I_a] - 1) / (a[I_a] + 1) * logb[I_a]
+    kChl = kChlrel * k
+
+    ndub = 15
+    int_step = 5
+    wlE = spectral.wlE.cpu().numpy()
+    wlF = spectral.wlF.cpu().numpy()
+    eps = 2 ** (-ndub)
+
+    Mb = None
+    Mf = None
+    if np.any(fqe > 0):
+        r21_batch = np.broadcast_to(r21, rho.shape)
+        talf_batch = np.broadcast_to(talf, rho.shape)
+        t21_batch = np.broadcast_to(t21, rho.shape)
+
+        k_ex = _interp1d_np(wl, k, wlE)
+        s_ex = _interp1d_np(wl, s, wlE)
+        kChl_ex = _interp1d_np(wl, kChl, wlE)
+        r21_ex = _interp1d_np(wl, r21_batch, wlE)
+        rho_ex = _interp1d_np(wl, rho, wlE)
+        tau_ex = _interp1d_np(wl, tau_meso, wlE)
+        talf_ex = _interp1d_np(wl, talf_batch, wlE)
+
+        k_em = _interp1d_np(wl, k, wlF)
+        s_em = _interp1d_np(wl, s, wlF)
+        r21_em = _interp1d_np(wl, r21_batch, wlF)
+        rho_em = _interp1d_np(wl, rho, wlF)
+        tau_em = _interp1d_np(wl, tau_meso, wlF)
+        t21_em = _interp1d_np(wl, t21_batch, wlF)
+
+        te = 1 - (k_ex + s_ex) * eps
+        tf = 1 - (k_em + s_em) * eps
+        re = s_ex * eps
+        rf = s_em * eps
+
+        sigmoid = 1.0 / (1.0 + np.exp(-wlF[:, None] / 10.0) * np.exp(wlE[None, :] / 10.0))
+        phi_em = np.interp(wlF, wl, phi)
+        coeff = int_step * eps * 0.5 * fqe[:, None, None]
+        Mf = coeff * phi_em[None, :, None] * kChl_ex[:, None, :] * sigmoid[None, :, :]
+        Mb = Mf.copy()
+
+        for _ in range(ndub):
+            xe = te / (1 - re * re)
+            xf = tf / (1 - rf * rf)
+            ten = te * xe
+            tfn = tf * xf
+            ren = re * (1 + ten)
+            rfn = rf * (1 + tfn)
+
+            prod = xf[:, :, None] * xe[:, None, :]
+            A11 = xf[:, :, None] + xe[:, None, :]
+            A12 = prod * (rf[:, :, None] + re[:, None, :])
+            A21 = 1 + prod * (1 + rf[:, :, None] * re[:, None, :])
+            A22 = (xf * rf)[:, :, None] + (xe * re)[:, None, :]
+
+            Mf_new = Mf * A11 + Mb * A12
+            Mb_new = Mb * A21 + Mf * A22
+
+            te, tf, re, rf = ten, tfn, ren, rfn
+            Mf, Mb = Mf_new, Mb_new
+
+        Rb_full = rho + tau_meso**2 * r21_batch / (1 - rho * r21_batch)
+        Rb_ex = _interp1d_np(wl, Rb_full, wlE)
+        Rb_em = _interp1d_np(wl, Rb_full, wlF)
+
+        Xe = talf_ex / (1 - r21_ex * Rb_ex)
+        Ye = tau_ex * r21_ex / (1 - rho_ex * r21_ex)
+        Xf = t21_em / (1 - r21_em * Rb_em)
+        Yf = tau_em * r21_em / (1 - rho_em * r21_em)
+
+        A = Xe[:, None, :] * (1 + Ye[:, None, :] * Yf[:, :, None]) * Xf[:, :, None]
+        B = Xe[:, None, :] * (Ye[:, None, :] + Yf[:, :, None]) * Xf[:, :, None]
+        g = Mb
+        f = Mf
+        Mb = A * g + B * f
+        Mf = A * f + B * g
+
+    return refl, tran, Mb, Mf
 
 
 def test_leafopt_shapes():
@@ -164,6 +282,7 @@ def test_leafopt_shapes():
     assert outputs.refl.shape == (3, spectral.wlP.numel())
     assert outputs.tran.shape == (3, spectral.wlP.numel())
     assert outputs.kChlrel.shape == (3, spectral.wlP.numel())
+    assert outputs.kCarrel.shape == (3, spectral.wlP.numel())
 
 
 def test_numpy_parity():
@@ -174,6 +293,21 @@ def test_numpy_parity():
     model = FluspectModel(spectral, optipar, dtype=dtype)
     leafbio = _make_leafbio(batch=2, device=device, dtype=dtype)
     torch_out = model(leafbio)
-    refl_np, tran_np = _fluspect_numpy(optipar, leafbio, spectral)
+    refl_np, tran_np, _, _ = _fluspect_numpy(optipar, leafbio, spectral)
     assert np.allclose(torch_out.refl.cpu().numpy(), refl_np, atol=1e-8, rtol=1e-6)
     assert np.allclose(torch_out.tran.cpu().numpy(), tran_np, atol=1e-8, rtol=1e-6)
+
+
+def test_fluorescence_parity():
+    device = torch.device("cpu")
+    dtype = torch.float64
+    spectral = _make_spectral(device, dtype)
+    optipar = _make_optipar(spectral)
+    model = FluspectModel(spectral, optipar, dtype=dtype)
+    leafbio = _make_leafbio(batch=1, device=device, dtype=dtype, fqe=0.02)
+    torch_out = model(leafbio)
+    assert torch_out.Mb is not None
+    assert torch_out.Mf is not None
+    _, _, Mb_np, Mf_np = _fluspect_numpy(optipar, leafbio, spectral)
+    assert np.allclose(torch_out.Mb.cpu().numpy(), Mb_np, atol=1e-8, rtol=1e-6)
+    assert np.allclose(torch_out.Mf.cpu().numpy(), Mf_np, atol=1e-8, rtol=1e-6)

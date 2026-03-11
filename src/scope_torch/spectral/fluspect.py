@@ -68,6 +68,7 @@ class LeafOptics:
     refl: torch.Tensor
     tran: torch.Tensor
     kChlrel: torch.Tensor
+    kCarrel: torch.Tensor
     Mb: Optional[torch.Tensor] = None
     Mf: Optional[torch.Tensor] = None
 
@@ -144,35 +145,26 @@ class FluspectModel:
             tau_core,
             r21,
             talf,
-            Rsub,
-            Tsub,
-            r,
-            t,
+            ralf,
+            t21,
+            r12,
+            t12,
         ) = self._combine_interfaces(tau, nr, N)
 
-        leafopt = LeafOptics(refl=refl, tran=tran, kChlrel=kChlrel)
+        leafopt = LeafOptics(refl=refl, tran=tran, kChlrel=kChlrel, kCarrel=kCarrel)
 
         if (fqe > 0).any():
             Mb, Mf = self._fluorescence(
-                refl,
-                tran,
-                tau,
-                talf,
-                r21,
-                kChlrel,
-                kCarrel,
-                k=N,
-                k_full=None,
-                Cab=Cab,
-                Kall=Kall,
-                r12=r12,
-                t12=t12,
+                rho_core=rho_core,
+                tau_core=tau_core,
+                refl=refl,
+                tran=tran,
+                talf=talf,
+                r21=r21,
                 t21=t21,
-                r=r,
-                leafbio=tensors,
+                kChlrel=kChlrel,
                 fqe=fqe,
                 phi=optipar.phi,
-                ralf=ralf,
             )
             leafopt.Mb = Mb
             leafopt.Mf = Mf
@@ -195,6 +187,20 @@ class FluspectModel:
             wlF = torch.as_tensor(wlF, device=self.device, dtype=self.dtype)
             wlE = torch.as_tensor(wlE, device=self.device, dtype=self.dtype)
         return SpectralGrids(wlP=wlP, wlF=wlF, wlE=wlE)
+
+    def _interp1d(self, source_x: torch.Tensor, source_y: torch.Tensor, target_x: torch.Tensor) -> torch.Tensor:
+        source_x = source_x.to(self.device, self.dtype)
+        target_x = target_x.to(self.device, self.dtype)
+        idx = torch.bucketize(target_x, source_x) - 1
+        idx = idx.clamp(0, source_x.numel() - 2)
+        x0 = source_x[idx]
+        x1 = source_x[idx + 1]
+        denom = (x1 - x0).clamp(min=1e-9)
+        frac = (target_x - x0) / denom
+        batch = source_y.shape[0]
+        gather0 = source_y.gather(1, idx.unsqueeze(0).expand(batch, -1))
+        gather1 = source_y.gather(1, (idx + 1).unsqueeze(0).expand(batch, -1))
+        return gather0 + (gather1 - gather0) * frac
 
     def _prepare_leafbio(self, leafbio: LeafBioBatch) -> Tuple[int, dict[str, torch.Tensor]]:
         tensors: dict[str, torch.Tensor] = {}
@@ -314,18 +320,135 @@ class FluspectModel:
         rho_core = (Rb - r21 * Z**2) / (1 - (r21 * Z) ** 2)
         tau_core = (1 - Rb * r21) / (1 - (r21 * Z) ** 2) * Z
 
-        return refl, tran, rho_core, tau_core, r21, talf, Rsub, Tsub, r, t
+        return refl, tran, rho_core, tau_core, r21, talf, ralf, t21, r12, t12
 
     def _fluorescence(
         self,
+        *,
+        rho_core: torch.Tensor,
+        tau_core: torch.Tensor,
         refl: torch.Tensor,
         tran: torch.Tensor,
-        tau: torch.Tensor,
         talf: torch.Tensor,
         r21: torch.Tensor,
+        t21: torch.Tensor,
         kChlrel: torch.Tensor,
-        kCarrel: torch.Tensor,
-        **_: dict,
+        fqe: torch.Tensor,
+        phi: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        # Placeholder for the full fluorescence implementation.
-        raise NotImplementedError("Fluorescence transport is not implemented yet")
+        device = self.device
+        dtype = self.dtype
+        spectral = self.spectral
+        wlP = spectral.wlP
+        wlE = spectral.wlE
+        wlF = spectral.wlF
+        batch = rho_core.shape[0]
+
+        if wlE is None or wlF is None:
+            raise ValueError("Spectral grids must define excitation and fluorescence wavelengths")
+
+        rho = torch.clamp(rho_core, min=0.0)
+        tau = tau_core
+
+        sum_rt = rho + tau
+        I_rt = sum_rt < 1 - 1e-9
+
+        D = torch.zeros_like(rho)
+        temp = (1 + rho + tau) * (1 + rho - tau) * (1 - rho + tau) * (1 - rho - tau)
+        D[I_rt] = torch.sqrt(torch.clamp(temp[I_rt], min=0.0))
+        a = torch.ones_like(rho)
+        b = torch.ones_like(rho)
+        safe_r = rho.clamp(min=1e-9)
+        safe_t = tau.clamp(min=1e-9)
+        a[I_rt] = (1 + rho[I_rt] ** 2 - tau[I_rt] ** 2 + D[I_rt]) / (2 * safe_r[I_rt])
+        b[I_rt] = (1 - rho[I_rt] ** 2 + tau[I_rt] ** 2 + D[I_rt]) / (2 * safe_t[I_rt])
+
+        s = torch.where(tau.abs() > 0, rho / tau, torch.zeros_like(rho))
+        logb = torch.log(torch.clamp(b, min=1e-12))
+        I_a = (a > 1) & torch.isfinite(a)
+        s[I_a] = 2 * a[I_a] / (a[I_a] ** 2 - 1) * logb[I_a]
+
+        k = logb.clone()
+        k[I_a] = (a[I_a] - 1) / (a[I_a] + 1) * logb[I_a]
+        kChl = kChlrel * k
+
+        r21_batch = r21.expand(batch, -1)
+        talf_batch = talf.expand(batch, -1)
+        t21_batch = t21.expand(batch, -1)
+
+        k_ex = self._interp1d(wlP, k, wlE)
+        s_ex = self._interp1d(wlP, s, wlE)
+        kChl_ex = self._interp1d(wlP, kChl, wlE)
+        r21_ex = self._interp1d(wlP, r21_batch, wlE)
+        rho_ex = self._interp1d(wlP, rho, wlE)
+        tau_ex = self._interp1d(wlP, tau, wlE)
+        talf_ex = self._interp1d(wlP, talf_batch, wlE)
+
+        k_em = self._interp1d(wlP, k, wlF)
+        s_em = self._interp1d(wlP, s, wlF)
+        r21_em = self._interp1d(wlP, r21_batch, wlF)
+        rho_em = self._interp1d(wlP, rho, wlF)
+        tau_em = self._interp1d(wlP, tau, wlF)
+        t21_em = self._interp1d(wlP, t21_batch, wlF)
+
+        eps = 2.0 ** (-self.ndub)
+        te = 1 - (k_ex + s_ex) * eps
+        tf = 1 - (k_em + s_em) * eps
+        re = s_ex * eps
+        rf = s_em * eps
+
+        sigmoid = 1.0 / (
+            1.0
+            + torch.exp(-wlF.view(-1, 1).to(device, dtype) / 10.0)
+            * torch.exp(wlE.view(1, -1).to(device, dtype) / 10.0)
+        )
+        sigmoid = sigmoid.unsqueeze(0)
+
+        phi_em = self._interp1d(wlP, phi.unsqueeze(0).expand(batch, -1), wlF)
+        coeff = self.step * eps * 0.5 * fqe.unsqueeze(-1).unsqueeze(-1)
+        Mf = coeff * phi_em.unsqueeze(-1) * kChl_ex.unsqueeze(1) * sigmoid
+        Mb = Mf.clone()
+
+        for _ in range(self.ndub):
+            xe = te / (1 - re * re)
+            xf = tf / (1 - rf * rf)
+            ten = te * xe
+            tfn = tf * xf
+            ren = re * (1 + ten)
+            rfn = rf * (1 + tfn)
+
+            prod = xf.unsqueeze(-1) * xe.unsqueeze(1)
+            A11 = xf.unsqueeze(-1) + xe.unsqueeze(1)
+            A12 = prod * (rf.unsqueeze(-1) + re.unsqueeze(1))
+            A21 = 1 + prod * (1 + rf.unsqueeze(-1) * re.unsqueeze(1))
+            A22 = (xf * rf).unsqueeze(-1) + (xe * re).unsqueeze(1)
+
+            Mf_new = Mf * A11 + Mb * A12
+            Mb_new = Mb * A21 + Mf * A22
+
+            te, tf, re, rf = ten, tfn, ren, rfn
+            Mf, Mb = Mf_new, Mb_new
+
+        Rb = rho + tau**2 * r21_batch / (1 - rho * r21_batch)
+        Rb_ex = self._interp1d(wlP, Rb, wlE)
+        Rb_em = self._interp1d(wlP, Rb, wlF)
+
+        Xe = talf_ex / (1 - r21_ex * Rb_ex)
+        Ye = tau_ex * r21_ex / (1 - rho_ex * r21_ex)
+        Xf = t21_em / (1 - r21_em * Rb_em)
+        Yf = tau_em * r21_em / (1 - rho_em * r21_em)
+
+        Xe_mat = Xe.unsqueeze(1)
+        Ye_mat = Ye.unsqueeze(1)
+        Xf_mat = Xf.unsqueeze(-1)
+        Yf_mat = Yf.unsqueeze(-1)
+
+        A = Xe_mat * (1 + Ye_mat * Yf_mat) * Xf_mat
+        B = Xe_mat * (Ye_mat + Yf_mat) * Xf_mat
+
+        g = Mb
+        f = Mf
+        Mb_final = A * g + B * f
+        Mf_final = A * f + B * g
+
+        return Mb_final, Mf_final
