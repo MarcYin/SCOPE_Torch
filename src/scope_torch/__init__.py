@@ -2,6 +2,14 @@
 
 from importlib.metadata import version as _pkg_version
 
+from .biochem import (
+    BiochemicalOptions,
+    BiochemicalTemperatureResponse,
+    LeafBiochemistryInputs,
+    LeafBiochemistryModel,
+    LeafBiochemistryResult,
+    LeafMeteo,
+)
 from .config import SimulationConfig
 from .canopy.foursail import FourSAILModel, FourSAILResult, campbell_lidf, scope_lazitab, scope_lidf, scope_litab
 from .canopy.fluorescence import CanopyFluorescenceModel, CanopyFluorescenceResult
@@ -14,6 +22,12 @@ from .spectral.soil import BSMSoilParameters, SoilBSMModel, SoilEmpiricalParams
 
 __all__ = [
     "SimulationConfig",
+    "BiochemicalOptions",
+    "BiochemicalTemperatureResponse",
+    "LeafBiochemistryInputs",
+    "LeafBiochemistryModel",
+    "LeafBiochemistryResult",
+    "LeafMeteo",
     "FluspectModel",
     "LeafBioBatch",
     "LeafOptics",
