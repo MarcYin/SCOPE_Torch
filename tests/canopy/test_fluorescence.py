@@ -91,3 +91,41 @@ def test_canopy_fluorescence_factory_accepts_reflectance_configuration():
     assert model.reflectance_model.sail is sail
     assert float(model.reflectance_model.soil_bsm.empirical.SMC) == 30.0
     assert float(model.reflectance_model.soil_bsm.empirical.film) == 0.02
+
+
+def test_canopy_fluorescence_layered_outputs_are_consistent():
+    device = torch.device("cpu")
+    dtype = torch.float64
+    lidf = campbell_lidf(57.0, device=device, dtype=dtype)
+    model = CanopyFluorescenceModel.from_scope_assets(lidf=lidf, device=device, dtype=dtype)
+
+    leafbio = LeafBioBatch(
+        Cab=torch.tensor([45.0], device=device, dtype=dtype),
+        Cw=torch.tensor([0.01], device=device, dtype=dtype),
+        Cdm=torch.tensor([0.012], device=device, dtype=dtype),
+        fqe=torch.tensor([0.01], device=device, dtype=dtype),
+    )
+    n_wle = model.reflectance_model.fluspect.spectral.wlE.numel()
+    Esun_ = torch.full((1, n_wle), 1.0, device=device, dtype=dtype)
+    Esky_ = torch.full((1, n_wle), 0.2, device=device, dtype=dtype)
+    soil = model.reflectance_model.soil_reflectance(soil_spectrum=torch.tensor([1.0], device=device, dtype=dtype))
+
+    result = model.layered(
+        leafbio,
+        soil,
+        torch.tensor([3.0], device=device, dtype=dtype),
+        torch.tensor([30.0], device=device, dtype=dtype),
+        torch.tensor([20.0], device=device, dtype=dtype),
+        torch.tensor([10.0], device=device, dtype=dtype),
+        Esun_,
+        Esky_,
+        nlayers=4,
+    )
+
+    n_wlf = model.reflectance_model.fluspect.spectral.wlF.numel()
+    assert result.LoF_.shape == (1, n_wlf)
+    assert result.Fmin_.shape == (1, 5, n_wlf)
+    assert result.Fplu_.shape == (1, 5, n_wlf)
+    assert torch.allclose(result.LoF_, result.LoF_sunlit + result.LoF_shaded + result.LoF_scattered + result.LoF_soil)
+    assert torch.allclose(result.EoutF_, result.Fplu_[:, 0, :])
+    assert torch.allclose(result.LoF_ * torch.pi, result.sigmaF * result.EoutFrc_, atol=1e-12, rtol=1e-10)

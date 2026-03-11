@@ -6,6 +6,7 @@ from typing import Optional
 import torch
 
 from .foursail import FourSAILModel
+from .layered_rt import LayeredCanopyTransfer, LayeredCanopyTransportModel
 from .reflectance import CanopyReflectanceModel
 from ..spectral.fluspect import LeafBioBatch
 from ..spectral.soil import SoilEmpiricalParams
@@ -13,10 +14,12 @@ from ..spectral.soil import SoilEmpiricalParams
 
 @dataclass(slots=True)
 class CanopyFluorescenceResult:
-    """First-pass canopy fluorescence outputs on the SCOPE fluorescence grid."""
-
     leaf_fluor_back: torch.Tensor
     leaf_fluor_forw: torch.Tensor
+    LoF_sunlit: torch.Tensor
+    LoF_shaded: torch.Tensor
+    LoF_scattered: torch.Tensor
+    LoF_soil: torch.Tensor
     Femleaves_: torch.Tensor
     EoutFrc_: torch.Tensor
     EoutF_: torch.Tensor
@@ -33,18 +36,16 @@ class CanopyFluorescenceResult:
     F761: torch.Tensor
     LoutF: torch.Tensor
     EoutF: torch.Tensor
+    Fmin_: torch.Tensor
+    Fplu_: torch.Tensor
 
 
 class CanopyFluorescenceModel:
-    """Canopy fluorescence wrapper built on leaf Mb/Mf and canopy gamma transport.
-
-    This is intentionally narrower than upstream ``RTMf``. It uses the existing
-    leaf excitation-emission matrices and 4SAIL gamma terms to provide a stable
-    fluorescence API before the full layered radiance solver is ported.
-    """
+    """Canopy fluorescence transport with both simple and layered modes."""
 
     def __init__(self, reflectance_model: CanopyReflectanceModel) -> None:
         self.reflectance_model = reflectance_model
+        self.layered_transport = LayeredCanopyTransportModel(reflectance_model.sail)
 
     @classmethod
     def from_scope_assets(
@@ -92,6 +93,31 @@ class CanopyFluorescenceModel:
         hotspot: Optional[torch.Tensor] = None,
         lidf: Optional[torch.Tensor] = None,
     ) -> CanopyFluorescenceResult:
+        return self.one_pass(
+            leafbio,
+            soil_refl,
+            lai,
+            tts,
+            tto,
+            psi,
+            excitation,
+            hotspot=hotspot,
+            lidf=lidf,
+        )
+
+    def one_pass(
+        self,
+        leafbio: LeafBioBatch,
+        soil_refl: torch.Tensor,
+        lai: torch.Tensor,
+        tts: torch.Tensor,
+        tto: torch.Tensor,
+        psi: torch.Tensor,
+        excitation: torch.Tensor,
+        *,
+        hotspot: Optional[torch.Tensor] = None,
+        lidf: Optional[torch.Tensor] = None,
+    ) -> CanopyFluorescenceResult:
         fluspect = self.reflectance_model.fluspect
         sail_model = self.reflectance_model.sail
 
@@ -112,7 +138,13 @@ class CanopyFluorescenceModel:
             lidf=self.reflectance_model.lidf if lidf is None else lidf,
         )
 
-        excitation_tensor = self._prepare_excitation(excitation, leafopt.Mb.shape[0], fluspect.spectral.wlE.numel())
+        wlE = fluspect.spectral.wlE
+        wlF = fluspect.spectral.wlF
+        wlP = fluspect.spectral.wlP
+        if wlE is None or wlF is None:
+            raise ValueError("Spectral grids must define excitation and fluorescence wavelengths")
+
+        excitation_tensor = self._prepare_spectrum(excitation, leafopt.Mb.shape[0], wlE.numel())
         leaf_fluor_back = torch.einsum("bfe,be->bf", leafopt.Mb, excitation_tensor)
         leaf_fluor_forw = torch.einsum("bfe,be->bf", leafopt.Mf, excitation_tensor)
 
@@ -120,17 +152,11 @@ class CanopyFluorescenceModel:
         Femleaves_ = lai_tensor.unsqueeze(-1) * (leaf_fluor_back + leaf_fluor_forw)
         EoutFrc_ = Femleaves_.clone()
 
-        wlP = fluspect.spectral.wlP
-        wlF = fluspect.spectral.wlF
-        if wlF is None:
-            raise ValueError("Spectral grids must define fluorescence wavelengths")
-
         gammasdf = self._interp1d(wlP, sail.gammasdf, wlF)
         gammasdb = self._interp1d(wlP, sail.gammasdb, wlF)
         gammaso = self._interp1d(wlP, sail.gammaso, wlF)
 
         transport_total = (gammasdf + gammasdb).clamp(min=1e-9)
-        # `gammasdb` is interpreted here as the upward hemispherical branch.
         upward_escape = torch.clamp(gammasdb / transport_total, min=0.0, max=1.0)
         sigmaF = torch.clamp(gammaso / transport_total, min=0.0, max=1.0)
 
@@ -144,9 +170,15 @@ class CanopyFluorescenceModel:
         LoutF = 0.001 * torch.trapz(LoF_, wlF, dim=-1)
         EoutF = 0.001 * torch.trapz(EoutF_, wlF, dim=-1)
 
+        zeros = torch.zeros_like(LoF_)
+        empty_profile = torch.zeros((LoF_.shape[0], 1, LoF_.shape[1]), device=LoF_.device, dtype=LoF_.dtype)
         return CanopyFluorescenceResult(
             leaf_fluor_back=leaf_fluor_back,
             leaf_fluor_forw=leaf_fluor_forw,
+            LoF_sunlit=LoF_,
+            LoF_shaded=zeros,
+            LoF_scattered=zeros,
+            LoF_soil=zeros,
             Femleaves_=Femleaves_,
             EoutFrc_=EoutFrc_,
             EoutF_=EoutF_,
@@ -163,21 +195,234 @@ class CanopyFluorescenceModel:
             F761=F761,
             LoutF=LoutF,
             EoutF=EoutF,
+            Fmin_=empty_profile,
+            Fplu_=empty_profile,
         )
 
-    def _prepare_excitation(self, excitation: torch.Tensor, batch: int, n_wle: int) -> torch.Tensor:
-        tensor = torch.as_tensor(excitation, device=self.reflectance_model.fluspect.device, dtype=self.reflectance_model.fluspect.dtype)
+    def layered(
+        self,
+        leafbio: LeafBioBatch,
+        soil_refl: torch.Tensor,
+        lai: torch.Tensor,
+        tts: torch.Tensor,
+        tto: torch.Tensor,
+        psi: torch.Tensor,
+        Esun_: torch.Tensor,
+        Esky_: torch.Tensor,
+        *,
+        etau: Optional[torch.Tensor] = None,
+        etah: Optional[torch.Tensor] = None,
+        hotspot: Optional[torch.Tensor] = None,
+        lidf: Optional[torch.Tensor] = None,
+        nlayers: Optional[int] = None,
+    ) -> CanopyFluorescenceResult:
+        fluspect = self.reflectance_model.fluspect
+        leafopt = fluspect(leafbio)
+        if leafopt.Mb is None or leafopt.Mf is None:
+            raise ValueError("Leaf fluorescence matrices are unavailable. Provide leafbio with fqe > 0.")
+
+        wlP = fluspect.spectral.wlP
+        wlE = fluspect.spectral.wlE
+        wlF = fluspect.spectral.wlF
+        if wlE is None or wlF is None:
+            raise ValueError("Spectral grids must define excitation and fluorescence wavelengths")
+
+        hotspot_value = hotspot if hotspot is not None else torch.full_like(torch.as_tensor(lai), self.reflectance_model.default_hotspot)
+        nl = self._resolve_nlayers(nlayers, etau=etau, etah=etah)
+
+        rho_e = self._sample_spectrum(leafopt.refl, wlP, wlE)
+        tau_e = self._sample_spectrum(leafopt.tran, wlP, wlE)
+        soil_e = self._sample_spectrum(soil_refl, wlP, wlE)
+        rho_f = self._sample_spectrum(leafopt.refl, wlP, wlF)
+        tau_f = self._sample_spectrum(leafopt.tran, wlP, wlF)
+        soil_f = self._sample_spectrum(soil_refl, wlP, wlF)
+
+        transport_e = self.layered_transport.build(
+            rho_e,
+            tau_e,
+            soil_e,
+            lai,
+            tts,
+            tto,
+            psi,
+            hotspot=hotspot_value,
+            lidf=self.reflectance_model.lidf if lidf is None else lidf,
+            nlayers=nl,
+        )
+        transport_f = self.layered_transport.build(
+            rho_f,
+            tau_f,
+            soil_f,
+            lai,
+            tts,
+            tto,
+            psi,
+            hotspot=hotspot_value,
+            lidf=self.reflectance_model.lidf if lidf is None else lidf,
+            nlayers=nl,
+        )
+
+        Esun = self._prepare_spectrum(Esun_, leafopt.Mb.shape[0], wlE.numel())
+        Esky = self._prepare_spectrum(Esky_, leafopt.Mb.shape[0], wlE.numel())
+        direct = self.layered_transport.flux_profiles(transport_e, Esun, torch.zeros_like(Esky))
+        diffuse = self.layered_transport.flux_profiles(transport_e, torch.zeros_like(Esun), Esky)
+
+        Mplu = 0.5 * (leafopt.Mb + leafopt.Mf)
+        Mmin = 0.5 * (leafopt.Mb - leafopt.Mf)
+        MpluEsun = self._matrix_energy_product(Mplu, Esun, wlE, wlF)
+        MminEsun = self._matrix_energy_product(Mmin, Esun, wlE, wlF)
+        MpluEmin = self._matrix_energy_product_layered(Mplu, direct.Emin_[:, :-1, :] + diffuse.Emin_[:, :-1, :], wlE, wlF)
+        MpluEplu = self._matrix_energy_product_layered(Mplu, direct.Eplu_[:, :-1, :] + diffuse.Eplu_[:, :-1, :], wlE, wlF)
+        MminEmin = self._matrix_energy_product_layered(Mmin, direct.Emin_[:, :-1, :] + diffuse.Emin_[:, :-1, :], wlE, wlF)
+        MminEplu = self._matrix_energy_product_layered(Mmin, direct.Eplu_[:, :-1, :] + diffuse.Eplu_[:, :-1, :], wlE, wlF)
+
+        etau_orient = self._prepare_etau(etau, transport_e)
+        etah_layer = self._prepare_etah(etah, transport_e)
+        etau_lidf = etau_orient * transport_e.lidf_azimuth.unsqueeze(1)
+        etah_lidf = etah_layer.unsqueeze(-1) * transport_e.lidf_azimuth.unsqueeze(1)
+
+        absfsfo_tau = (etau_lidf * transport_e.absfs.unsqueeze(1) * transport_e.absfo.unsqueeze(1)).sum(dim=-1)
+        fsfo_tau = (etau_lidf * transport_e.fsfo.unsqueeze(1)).sum(dim=-1)
+        absfs_tau = (etau_lidf * transport_e.absfs.unsqueeze(1)).sum(dim=-1)
+        fsctl_tau = (etau_lidf * transport_e.fsctl.unsqueeze(1)).sum(dim=-1)
+        absfo_tau = (etau_lidf * transport_e.absfo.unsqueeze(1)).sum(dim=-1)
+        foctl_tau = (etau_lidf * transport_e.foctl.unsqueeze(1)).sum(dim=-1)
+        ctl2_tau = (etau_lidf * transport_e.ctl2.unsqueeze(1)).sum(dim=-1)
+
+        absfo_h = (etah_lidf * transport_e.absfo.unsqueeze(1)).sum(dim=-1)
+        foctl_h = (etah_lidf * transport_e.foctl.unsqueeze(1)).sum(dim=-1)
+        ctl2_h = (etah_lidf * transport_e.ctl2.unsqueeze(1)).sum(dim=-1)
+        sum_tau = etau_lidf.sum(dim=-1)
+        sum_h = etah_lidf.sum(dim=-1)
+
+        wfEs = absfsfo_tau.unsqueeze(-1) * MpluEsun.unsqueeze(1) + fsfo_tau.unsqueeze(-1) * MminEsun.unsqueeze(1)
+        sfEs = absfs_tau.unsqueeze(-1) * MpluEsun.unsqueeze(1) - fsctl_tau.unsqueeze(-1) * MminEsun.unsqueeze(1)
+        sbEs = absfs_tau.unsqueeze(-1) * MpluEsun.unsqueeze(1) + fsctl_tau.unsqueeze(-1) * MminEsun.unsqueeze(1)
+        vfEplu_h = absfo_h.unsqueeze(-1) * MpluEplu - foctl_h.unsqueeze(-1) * MminEplu
+        vfEplu_u = absfo_tau.unsqueeze(-1) * MpluEplu - foctl_tau.unsqueeze(-1) * MminEplu
+        vbEmin_h = absfo_h.unsqueeze(-1) * MpluEmin + foctl_h.unsqueeze(-1) * MminEmin
+        vbEmin_u = absfo_tau.unsqueeze(-1) * MpluEmin + foctl_tau.unsqueeze(-1) * MminEmin
+        sigfEmin_h = sum_h.unsqueeze(-1) * MpluEmin - ctl2_h.unsqueeze(-1) * MminEmin
+        sigfEmin_u = sum_tau.unsqueeze(-1) * MpluEmin - ctl2_tau.unsqueeze(-1) * MminEmin
+        sigbEmin_h = sum_h.unsqueeze(-1) * MpluEmin + ctl2_h.unsqueeze(-1) * MminEmin
+        sigbEmin_u = sum_tau.unsqueeze(-1) * MpluEmin + ctl2_tau.unsqueeze(-1) * MminEmin
+        sigfEplu_h = sum_h.unsqueeze(-1) * MpluEplu - ctl2_h.unsqueeze(-1) * MminEplu
+        sigfEplu_u = sum_tau.unsqueeze(-1) * MpluEplu - ctl2_tau.unsqueeze(-1) * MminEplu
+        sigbEplu_h = sum_h.unsqueeze(-1) * MpluEplu + ctl2_h.unsqueeze(-1) * MminEplu
+        sigbEplu_u = sum_tau.unsqueeze(-1) * MpluEplu + ctl2_tau.unsqueeze(-1) * MminEplu
+
+        piLs = wfEs + vfEplu_u + vbEmin_u
+        piLd = vbEmin_h + vfEplu_h
+        Fsmin = sfEs + sigfEmin_u + sigbEplu_u
+        Fsplu = sbEs + sigbEmin_u + sigfEplu_u
+        Fdmin = sigfEmin_h + sigbEplu_h
+        Fdplu = sigbEmin_h + sigfEplu_h
+
+        Qs = transport_f.Ps[:, :nl]
+        iLAI = transport_f.iLAI.unsqueeze(-1).unsqueeze(-1)
+        Femmin = iLAI * (Qs.unsqueeze(-1) * Fsmin + (1.0 - Qs).unsqueeze(-1) * Fdmin)
+        Femplu = iLAI * (Qs.unsqueeze(-1) * Fsplu + (1.0 - Qs).unsqueeze(-1) * Fdplu)
+
+        batch = leafopt.Mb.shape[0]
+        nf = wlF.numel()
+        Fmin = torch.zeros((batch, nl + 1, nf), device=wlF.device, dtype=wlF.dtype)
+        Fplu = torch.zeros_like(Fmin)
+        U = torch.zeros_like(Fmin)
+        Y = torch.zeros((batch, nl, nf), device=wlF.device, dtype=wlF.dtype)
+        for layer in range(nl - 1, -1, -1):
+            denom = (1.0 - transport_f.rho_dd[:, layer, :] * transport_f.R_dd[:, layer + 1, :]).clamp(min=1e-9)
+            Y[:, layer, :] = (transport_f.rho_dd[:, layer, :] * U[:, layer + 1, :] + Femmin[:, layer, :]) / denom
+            U[:, layer, :] = transport_f.tau_dd[:, layer, :] * (transport_f.R_dd[:, layer + 1, :] * Y[:, layer, :] + U[:, layer + 1, :]) + Femplu[:, layer, :]
+        for layer in range(nl):
+            Fmin[:, layer + 1, :] = transport_f.Xdd[:, layer, :] * Fmin[:, layer, :] + Y[:, layer, :]
+            Fplu[:, layer, :] = transport_f.R_dd[:, layer, :] * Fmin[:, layer, :] + U[:, layer, :]
+
+        Po = transport_f.Po[:, :nl].unsqueeze(-1)
+        Pso = transport_f.Pso[:, :nl].unsqueeze(-1)
+        piLo1 = transport_f.iLAI.unsqueeze(-1) * (piLs * Pso).sum(dim=1)
+        piLo2 = transport_f.iLAI.unsqueeze(-1) * (piLd * (Po - Pso)).sum(dim=1)
+        piLo3 = transport_f.iLAI.unsqueeze(-1) * (
+            (transport_f.vb.unsqueeze(1) * Fmin[:, :nl, :] + transport_f.vf.unsqueeze(1) * Fplu[:, :nl, :]) * Po
+        ).sum(dim=1)
+        piLo4 = soil_f * Fmin[:, -1, :] * transport_f.Po[:, -1].unsqueeze(-1)
+        piLtot = piLo1 + piLo2 + piLo3 + piLo4
+
+        LoF_ = piLtot / torch.pi
+        EoutF_ = Fplu[:, 0, :]
+        Femleaves_ = (Femmin + Femplu).sum(dim=1)
+        EoutFrc_ = Femleaves_
+        sigmaF = (LoF_ * torch.pi) / EoutFrc_.clamp(min=1e-12)
+
+        reflectance = self.reflectance_model(
+            leafbio,
+            soil_refl,
+            lai,
+            tts,
+            tto,
+            psi,
+            hotspot=hotspot_value,
+            lidf=lidf,
+        )
+        gammasdf = self._interp1d(wlP, reflectance.gammasdf, wlF)
+        gammasdb = self._interp1d(wlP, reflectance.gammasdb, wlF)
+        gammaso = self._interp1d(wlP, reflectance.gammaso, wlF)
+
+        F685, wl685 = self._peak_in_window(LoF_, wlF, max_wavelength=700.0)
+        F740, wl740 = self._peak_in_window(LoF_, wlF, min_wavelength=700.0)
+        F684 = self._sample_nearest(LoF_, wlF, 684.0)
+        F761 = self._sample_nearest(LoF_, wlF, 761.0)
+        LoutF = 0.001 * torch.trapz(LoF_, wlF, dim=-1)
+        EoutF = 0.001 * torch.trapz(EoutF_, wlF, dim=-1)
+
+        return CanopyFluorescenceResult(
+            leaf_fluor_back=torch.einsum("bfe,be->bf", leafopt.Mb, Esun),
+            leaf_fluor_forw=torch.einsum("bfe,be->bf", leafopt.Mf, Esun),
+            LoF_sunlit=piLo1 / torch.pi,
+            LoF_shaded=piLo2 / torch.pi,
+            LoF_scattered=piLo3 / torch.pi,
+            LoF_soil=piLo4 / torch.pi,
+            Femleaves_=Femleaves_,
+            EoutFrc_=EoutFrc_,
+            EoutF_=EoutF_,
+            LoF_=LoF_,
+            sigmaF=sigmaF,
+            gammasdf=gammasdf,
+            gammasdb=gammasdb,
+            gammaso=gammaso,
+            F685=F685,
+            wl685=wl685,
+            F740=F740,
+            wl740=wl740,
+            F684=F684,
+            F761=F761,
+            LoutF=LoutF,
+            EoutF=EoutF,
+            Fmin_=Fmin,
+            Fplu_=Fplu,
+        )
+
+    def _prepare_spectrum(self, value: torch.Tensor, batch: int, n_wavelength: int) -> torch.Tensor:
+        tensor = torch.as_tensor(value, device=self.reflectance_model.fluspect.device, dtype=self.reflectance_model.fluspect.dtype)
         if tensor.ndim == 1:
             tensor = tensor.unsqueeze(0)
         if tensor.ndim != 2:
-            raise ValueError(f"Excitation spectra must be 1D or 2D, got shape {tuple(tensor.shape)}")
-        if tensor.shape[-1] != n_wle:
-            raise ValueError(f"Excitation spectra must have length {n_wle} to match wlE, got {tensor.shape[-1]}")
+            raise ValueError(f"Spectra must be 1D or 2D, got shape {tuple(tensor.shape)}")
+        if tensor.shape[-1] != n_wavelength:
+            raise ValueError(f"Spectra must have length {n_wavelength}, got {tensor.shape[-1]}")
         if tensor.shape[0] == 1 and batch != 1:
             tensor = tensor.expand(batch, -1)
         elif tensor.shape[0] != batch:
-            raise ValueError("Excitation spectra must broadcast to the batch dimension")
+            raise ValueError("Spectra must broadcast to the batch dimension")
         return tensor
+
+    def _resolve_nlayers(self, nlayers: Optional[int], *, etau: Optional[torch.Tensor], etah: Optional[torch.Tensor]) -> int:
+        for value in (etau, etah):
+            if value is None:
+                continue
+            tensor = torch.as_tensor(value)
+            if tensor.ndim >= 2:
+                return int(tensor.shape[1])
+        return int(nlayers) if nlayers is not None else 60
 
     def _expand_batch(self, value: torch.Tensor | float, batch: int, *, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
         tensor = torch.as_tensor(value, device=device, dtype=dtype)
@@ -203,6 +448,81 @@ class CanopyFluorescenceModel:
         y1 = source_y.gather(1, (idx + 1).unsqueeze(0).expand(source_y.shape[0], -1))
         return y0 + (y1 - y0) * frac
 
+    def _sample_spectrum(self, spectrum: torch.Tensor, source_x: torch.Tensor, target_x: torch.Tensor) -> torch.Tensor:
+        if spectrum.shape[-1] == target_x.numel() and source_x.numel() == target_x.numel() and torch.allclose(source_x, target_x):
+            return spectrum
+        return self._interp1d(source_x, spectrum, target_x)
+
+    def _ephoton(self, wavelength_nm: torch.Tensor) -> torch.Tensor:
+        h = torch.as_tensor(6.62607015e-34, device=wavelength_nm.device, dtype=wavelength_nm.dtype)
+        c = torch.as_tensor(299792458.0, device=wavelength_nm.device, dtype=wavelength_nm.dtype)
+        avogadro = torch.as_tensor(6.02214076e23, device=wavelength_nm.device, dtype=wavelength_nm.dtype)
+        wavelength_m = wavelength_nm * 1e-9
+        return avogadro * h * c / wavelength_m
+
+    def _e2phot(self, wavelength_nm: torch.Tensor, energy: torch.Tensor) -> torch.Tensor:
+        return energy / self._ephoton(wavelength_nm).view(*([1] * (energy.ndim - 1)), -1)
+
+    def _matrix_energy_product(self, matrix: torch.Tensor, excitation: torch.Tensor, wlE: torch.Tensor, wlF: torch.Tensor) -> torch.Tensor:
+        photons = self._e2phot(wlE, excitation)
+        emitted = torch.einsum("bfe,be->bf", matrix, photons)
+        return self._ephoton(wlF).unsqueeze(0) * emitted
+
+    def _matrix_energy_product_layered(self, matrix: torch.Tensor, excitation: torch.Tensor, wlE: torch.Tensor, wlF: torch.Tensor) -> torch.Tensor:
+        photons = self._e2phot(wlE, excitation)
+        emitted = torch.einsum("bfe,ble->blf", matrix, photons)
+        return self._ephoton(wlF).view(1, 1, -1) * emitted
+
+    def _prepare_etau(self, etau: Optional[torch.Tensor], transfer: LayeredCanopyTransfer) -> torch.Tensor:
+        batch = transfer.Ps.shape[0]
+        nl = transfer.nlayers
+        nori = transfer.lidf_azimuth.shape[1]
+        device = transfer.Ps.device
+        dtype = transfer.Ps.dtype
+        if etau is None:
+            return torch.ones((batch, nl, nori), device=device, dtype=dtype)
+        tensor = torch.as_tensor(etau, device=device, dtype=dtype)
+        if tensor.ndim == 0:
+            return tensor.view(1, 1, 1).expand(batch, nl, nori)
+        if tensor.ndim == 1:
+            if tensor.shape[0] == batch:
+                return tensor.view(batch, 1, 1).expand(batch, nl, nori)
+            if tensor.shape[0] == nl:
+                return tensor.view(1, nl, 1).expand(batch, nl, nori)
+        if tensor.ndim == 2:
+            if tensor.shape == (batch, nl):
+                return tensor.unsqueeze(-1).expand(batch, nl, nori)
+            if tensor.shape[0] == 1 and tensor.shape[1] == nl:
+                return tensor.unsqueeze(-1).expand(batch, nl, nori)
+        if tensor.ndim == 3 and tensor.shape[-1] == nori:
+            if tensor.shape[0] == 1 and tensor.shape[1] == nl:
+                return tensor.expand(batch, nl, nori)
+            if tensor.shape[0] == batch and tensor.shape[1] == nl:
+                return tensor
+        raise ValueError(f"etau must broadcast to shape ({batch}, {nl}, {nori}), got {tuple(tensor.shape)}")
+
+    def _prepare_etah(self, etah: Optional[torch.Tensor], transfer: LayeredCanopyTransfer) -> torch.Tensor:
+        batch = transfer.Ps.shape[0]
+        nl = transfer.nlayers
+        device = transfer.Ps.device
+        dtype = transfer.Ps.dtype
+        if etah is None:
+            return torch.ones((batch, nl), device=device, dtype=dtype)
+        tensor = torch.as_tensor(etah, device=device, dtype=dtype)
+        if tensor.ndim == 0:
+            return tensor.view(1, 1).expand(batch, nl)
+        if tensor.ndim == 1:
+            if tensor.shape[0] == batch:
+                return tensor.view(batch, 1).expand(batch, nl)
+            if tensor.shape[0] == nl:
+                return tensor.view(1, nl).expand(batch, nl)
+        if tensor.ndim == 2:
+            if tensor.shape == (batch, nl):
+                return tensor
+            if tensor.shape[0] == 1 and tensor.shape[1] == nl:
+                return tensor.expand(batch, nl)
+        raise ValueError(f"etah must broadcast to shape ({batch}, {nl}), got {tuple(tensor.shape)}")
+
     def _peak_in_window(
         self,
         spectrum: torch.Tensor,
@@ -218,7 +538,6 @@ class CanopyFluorescenceModel:
             mask &= wavelength <= max_wavelength
         if not mask.any():
             raise ValueError("Requested peak window does not overlap the fluorescence grid")
-
         window_idx = torch.nonzero(mask, as_tuple=False).squeeze(-1)
         window = spectrum.index_select(1, window_idx)
         peak_values, peak_offsets = window.max(dim=-1)
