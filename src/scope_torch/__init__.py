@@ -7,6 +7,7 @@ from .canopy.foursail import FourSAILModel, FourSAILResult, campbell_lidf
 from .canopy.reflectance import CanopyReflectanceModel, CanopyReflectanceResult
 from .spectral.fluspect import FluspectModel, LeafBioBatch, LeafOptics, OptiPar, SpectralGrids
 from .spectral.loaders import FluspectResources, SoilSpectraLibrary, load_fluspect_resources, load_scope_filenames, load_soil_spectra
+from .spectral.soil import BSMSoilParameters, SoilBSMModel, SoilEmpiricalParams
 
 __all__ = [
     "SimulationConfig",
@@ -17,6 +18,9 @@ __all__ = [
     "SpectralGrids",
     "FluspectResources",
     "SoilSpectraLibrary",
+    "BSMSoilParameters",
+    "SoilBSMModel",
+    "SoilEmpiricalParams",
     "load_fluspect_resources",
     "load_scope_filenames",
     "load_soil_spectra",
