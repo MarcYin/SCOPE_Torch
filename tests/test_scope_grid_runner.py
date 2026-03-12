@@ -145,6 +145,80 @@ def test_scope_grid_runner_matches_manual():
         assert torch.allclose(outputs[key], torch.cat(values, dim=0))
 
 
+def test_scope_grid_runner_reflectance_respects_explicit_nlayers():
+    device = torch.device("cpu")
+    dtype = torch.float64
+    spectral = _spectral(device, dtype)
+    optipar = _optipar(spectral)
+    fluspect = FluspectModel(spectral, optipar, dtype=dtype)
+    lidf = campbell_lidf(57.0, device=device, dtype=dtype)
+    sail = FourSAILModel(lidf=lidf)
+
+    times = pd.date_range("2020-07-01", periods=2, freq="h")
+    y = np.arange(1)
+    x = np.arange(1)
+    nwl = spectral.wlP.numel()
+    rng = np.random.default_rng(1)
+    data = xr.Dataset(
+        {
+            "Cab": (("y", "x", "time"), np.full((1, 1, 2), 45.0)),
+            "Cw": (("y", "x", "time"), np.full((1, 1, 2), 0.01)),
+            "Cdm": (("y", "x", "time"), np.full((1, 1, 2), 0.012)),
+            "LAI": (("y", "x", "time"), np.full((1, 1, 2), 6.5)),
+            "tts": (("y", "x", "time"), np.full((1, 1, 2), 30.0)),
+            "tto": (("y", "x", "time"), np.full((1, 1, 2), 20.0)),
+            "psi": (("y", "x", "time"), np.array([[[5.0, 15.0]]])),
+            "soil_refl": (("y", "x", "time", "wavelength"), rng.random((1, 1, 2, nwl)) * 0.2 + 0.1),
+        },
+        coords={"y": y, "x": x, "time": times, "wavelength": np.arange(nwl)},
+    )
+
+    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    module = ScopeGridDataModule(data, cfg, required_vars=["Cab", "Cw", "Cdm", "LAI", "tts", "tto", "psi", "soil_refl"])
+    runner = ScopeGridRunner(fluspect, sail, lidf=lidf)
+    outputs = runner.run(
+        module,
+        varmap={
+            "Cab": "Cab",
+            "Cw": "Cw",
+            "Cdm": "Cdm",
+            "LAI": "LAI",
+            "tts": "tts",
+            "tto": "tto",
+            "psi": "psi",
+            "soil_refl": "soil_refl",
+        },
+        nlayers=8,
+    )
+
+    stacked = data.stack(batch=("y", "x", "time"))
+    reflectance_model = CanopyReflectanceModel(fluspect, sail, lidf=lidf, default_hotspot=runner.default_hotspot)
+    manual_outputs: dict[str, list[torch.Tensor]] = {"leaf_refl": [], "leaf_tran": [], **{key: [] for key in CANOPY_KEYS}}
+    for label in stacked["Cab"].indexes["batch"]:
+        idx = dict(batch=label)
+        leafbio = LeafBioBatch(
+            Cab=torch.tensor([float(stacked["Cab"].sel(**idx))], device=device, dtype=dtype),
+            Cw=torch.tensor([float(stacked["Cw"].sel(**idx))], device=device, dtype=dtype),
+            Cdm=torch.tensor([float(stacked["Cdm"].sel(**idx))], device=device, dtype=dtype),
+        )
+        soil_tensor = torch.tensor(stacked["soil_refl"].sel(**idx).values, device=device, dtype=dtype).unsqueeze(0)
+        reflectance_out = reflectance_model(
+            leafbio,
+            soil_tensor,
+            torch.tensor([float(stacked["LAI"].sel(**idx))], device=device, dtype=dtype),
+            torch.tensor([float(stacked["tts"].sel(**idx))], device=device, dtype=dtype),
+            torch.tensor([float(stacked["tto"].sel(**idx))], device=device, dtype=dtype),
+            torch.tensor([float(stacked["psi"].sel(**idx))], device=device, dtype=dtype),
+            hotspot=torch.tensor([runner.default_hotspot], device=device, dtype=dtype),
+            nlayers=8,
+        )
+        for key in manual_outputs:
+            manual_outputs[key].append(getattr(reflectance_out, key))
+
+    for key, values in manual_outputs.items():
+        assert torch.allclose(outputs[key], torch.cat(values, dim=0))
+
+
 def test_scope_grid_runner_energy_balance_thermal_matches_manual():
     device = torch.device("cpu")
     dtype = torch.float64

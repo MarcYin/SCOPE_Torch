@@ -112,6 +112,7 @@ class ScopeGridRunner:
         *,
         varmap: Mapping[str, str],
         hotspot_var: Optional[str] = None,
+        nlayers: Optional[int] = None,
     ) -> Dict[str, torch.Tensor]:
         outputs: dict[str, list[torch.Tensor]] = {name: [] for name in CanopyReflectanceResult.__dataclass_fields__}
         for batch in data_module.iter_batches():
@@ -135,6 +136,7 @@ class ScopeGridRunner:
                 tto,
                 psi,
                 hotspot=hotspot,
+                nlayers=self._layer_count(nlayers, etau=None, etah=None, Tcu=None, Tch=None),
             )
             for name in outputs:
                 outputs[name].append(getattr(result, name))

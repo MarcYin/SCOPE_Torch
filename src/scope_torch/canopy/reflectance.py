@@ -167,6 +167,7 @@ class CanopyReflectanceModel:
         *,
         hotspot: Optional[torch.Tensor] = None,
         lidf: Optional[torch.Tensor] = None,
+        nlayers: Optional[int | torch.Tensor] = None,
     ) -> CanopyReflectanceResult:
         leafopt = self.fluspect(leafbio)
         hotspot_value = hotspot if hotspot is not None else torch.full_like(torch.as_tensor(lai), self.default_hotspot)
@@ -190,6 +191,7 @@ class CanopyReflectanceModel:
             psi=psi,
             hotspot=hotspot_value,
             lidf=self.lidf if lidf is None else lidf,
+            nlayers=nlayers,
         )
         sail_out.rdd = rtmo_core["rdd"]
         sail_out.rsd = rtmo_core["rsd"]
@@ -219,12 +221,14 @@ class CanopyReflectanceModel:
         psi: torch.Tensor,
         hotspot: torch.Tensor,
         lidf: torch.Tensor,
+        nlayers: Optional[int | torch.Tensor] = None,
     ) -> dict[str, torch.Tensor]:
         soil = self.sail._ensure_2d(soil_refl, target_shape=leafopt.refl.shape)
         batch, nwl = leafopt.refl.shape
         outputs = {"rdd": [], "rsd": [], "rdo": [], "rso": [], "rsos": [], "rsod": []}
+        batch_nlayers = self._resolve_nlayers(nlayers, lai, batch, device=leafopt.refl.device, dtype=leafopt.refl.dtype)
         for idx in range(batch):
-            nlayers = max(2, int(torch.ceil(torch.as_tensor(lai[idx], device=leafopt.refl.device, dtype=leafopt.refl.dtype) * 10.0).item()))
+            nlayers_i = int(batch_nlayers[idx].item())
             transfer = self.layered_transport.build(
                 leafopt.refl[idx : idx + 1],
                 leafopt.tran[idx : idx + 1],
@@ -235,7 +239,7 @@ class CanopyReflectanceModel:
                 psi[idx : idx + 1],
                 hotspot=hotspot[idx : idx + 1],
                 lidf=lidf[idx : idx + 1] if lidf.ndim == 2 else lidf,
-                nlayers=nlayers,
+                nlayers=nlayers_i,
             )
             unit = torch.ones((1, nwl), device=leafopt.refl.device, dtype=leafopt.refl.dtype)
             zeros = torch.zeros_like(unit)
@@ -270,3 +274,31 @@ class CanopyReflectanceModel:
             outputs["rsod"].append(rsod)
 
         return {name: torch.cat(chunks, dim=0) for name, chunks in outputs.items()}
+
+    def _resolve_nlayers(
+        self,
+        nlayers: Optional[int | torch.Tensor],
+        lai: torch.Tensor,
+        batch: int,
+        *,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> torch.Tensor:
+        if nlayers is None:
+            lai_tensor = torch.as_tensor(lai, device=device, dtype=dtype).reshape(-1)
+            if lai_tensor.shape[0] == 1 and batch != 1:
+                lai_tensor = lai_tensor.expand(batch)
+            return torch.clamp(torch.ceil(lai_tensor * 10.0), min=2.0).to(torch.int64)
+
+        if isinstance(nlayers, int):
+            return torch.full((batch,), max(2, nlayers), device=device, dtype=torch.int64)
+
+        nlayers_tensor = torch.as_tensor(nlayers, device=device)
+        if nlayers_tensor.ndim == 0:
+            return torch.full((batch,), max(2, int(nlayers_tensor.item())), device=device, dtype=torch.int64)
+        nlayers_tensor = nlayers_tensor.reshape(-1)
+        if nlayers_tensor.shape[0] == 1 and batch != 1:
+            nlayers_tensor = nlayers_tensor.expand(batch)
+        if nlayers_tensor.shape[0] != batch:
+            raise ValueError("nlayers must be scalar or match the batch dimension")
+        return torch.clamp(torch.round(nlayers_tensor), min=2).to(torch.int64)
