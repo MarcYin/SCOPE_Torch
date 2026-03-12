@@ -1022,7 +1022,9 @@ class CanopyEnergyBalanceModel:
         if canopy.fV is not None:
             return self.fluorescence_model._prepare_layer_profile(canopy.fV, transfer)
         kV = self._expand_batch(canopy.kV, batch, device=device, dtype=dtype)
-        return torch.exp(kV.view(batch, 1) * transfer.xl[1:].view(1, -1))
+        # Match upstream SCOPE ebal.m: fV is evaluated on xl(1:end-1),
+        # i.e. it includes the canopy top (0) and excludes the bottom edge.
+        return torch.exp(kV.view(batch, 1) * transfer.xl[:-1].view(1, -1))
 
     def _prepare_soil_profile(self, value: torch.Tensor | float, batch: int, *, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
         tensor = torch.as_tensor(value, device=device, dtype=dtype)

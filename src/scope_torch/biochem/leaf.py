@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -396,14 +397,65 @@ class LeafBiochemistryModel:
         tol: float,
         max_iter: int,
     ) -> dict[str, torch.Tensor | int]:
-        zero_intercept = BallBerry0 == 0
         ci = self._ball_berry(Cs, RH, None, BallBerrySlope, BallBerry0, min_ci)
-        fcount = 1
+        zero_intercept = BallBerry0 == 0
         if zero_intercept.all():
-            return {"Ci": ci, "fcount": fcount}
+            return {"Ci": ci, "fcount": 1}
 
-        a = Cs
-        err_a = self._ci_error(
+        ci = ci.clone()
+        max_fcount = 1
+        solve_indices = torch.nonzero(~zero_intercept, as_tuple=False).reshape(-1)
+        for raw_idx in solve_indices.tolist():
+            idx = int(raw_idx)
+            ci_value, fcount = self._solve_ci_scalar_brent(
+                Cs=Cs[idx : idx + 1],
+                RH=RH[idx : idx + 1],
+                min_ci=min_ci,
+                BallBerrySlope=BallBerrySlope[idx : idx + 1],
+                BallBerry0=BallBerry0[idx : idx + 1],
+                ppm2bar=ppm2bar[idx : idx + 1],
+                canopy_type=canopy_type,
+                g_m=g_m[idx : idx + 1],
+                Vs_C3=Vs_C3[idx : idx + 1],
+                MM_consts=MM_consts[idx : idx + 1],
+                Rd=Rd[idx : idx + 1],
+                Vcmax=Vcmax[idx : idx + 1],
+                Gamma_star=Gamma_star[idx : idx + 1],
+                Je=Je[idx : idx + 1],
+                effcon=effcon[idx : idx + 1],
+                Ke=Ke[idx : idx + 1],
+                tol=tol,
+                max_iter=max_iter,
+            )
+            ci[idx] = ci_value
+            max_fcount = max(max_fcount, fcount)
+        return {"Ci": ci, "fcount": max_fcount}
+
+    def _solve_ci_scalar_brent(
+        self,
+        *,
+        Cs: torch.Tensor,
+        RH: torch.Tensor,
+        min_ci: float,
+        BallBerrySlope: torch.Tensor,
+        BallBerry0: torch.Tensor,
+        ppm2bar: torch.Tensor,
+        canopy_type: str,
+        g_m: torch.Tensor,
+        Vs_C3: torch.Tensor,
+        MM_consts: torch.Tensor,
+        Rd: torch.Tensor,
+        Vcmax: torch.Tensor,
+        Gamma_star: torch.Tensor,
+        Je: torch.Tensor,
+        effcon: torch.Tensor,
+        Ke: torch.Tensor,
+        tol: float,
+        max_iter: int,
+    ) -> tuple[torch.Tensor, int]:
+        tolx = 0.0
+        a = float(Cs.item())
+        err1, b = self._ci_step_scalar(
             a,
             Cs=Cs,
             RH=RH,
@@ -422,8 +474,7 @@ class LeafBiochemistryModel:
             effcon=effcon,
             Ke=Ke,
         )
-        b = a + err_a
-        err_b = self._ci_error(
+        err2, _ = self._ci_step_scalar(
             b,
             Cs=Cs,
             RH=RH,
@@ -442,25 +493,22 @@ class LeafBiochemistryModel:
             effcon=effcon,
             Ke=Ke,
         )
+        if math.isnan(err2):
+            err2 = 0.0
         fcount = 2
-        ci = b
+        if abs(err2) <= tol:
+            return torch.full_like(Cs, b), fcount
 
-        lower = torch.minimum(a, b)
-        upper = torch.maximum(a, b)
-        err_lower = torch.where(a <= b, err_a, err_b)
-        err_upper = torch.where(a <= b, err_b, err_a)
-        bracketed = (~zero_intercept) & ((err_lower >= 0.0) & (err_upper <= 0.0) | (err_lower <= 0.0) & (err_upper >= 0.0))
-
-        need_secant = (~zero_intercept) & ~bracketed
-        if need_secant.any():
-            denom = err_b - err_a
-            secant = torch.where(
-                denom.abs() > 1e-12,
-                b - err_b * (b - a) / denom,
-                b,
-            )
-            err_secant = self._ci_error(
-                secant,
+        recompute_b = True
+        not_bracketing = self._same_sign(err1, err2)
+        if not_bracketing:
+            denom = err2 - err1
+            if abs(denom) > 0.0:
+                x1 = b - err2 * (b - a) / denom
+            else:
+                x1 = b
+            err_x1, _ = self._ci_step_scalar(
+                x1,
                 Cs=Cs,
                 RH=RH,
                 min_ci=min_ci,
@@ -479,73 +527,28 @@ class LeafBiochemistryModel:
                 Ke=Ke,
             )
             fcount += 1
+            if not self._same_sign(err_x1, err1):
+                if abs(err2) < abs(err1):
+                    a, err1 = b, err2
+                b, err2 = x1, err_x1
 
-            bracket_a_secant = need_secant & ((err_a >= 0.0) == (err_secant <= 0.0))
-            bracket_b_secant = need_secant & ~bracket_a_secant & ((err_b >= 0.0) == (err_secant <= 0.0))
+            not_bracketing = self._same_sign(err1, err2) and min(abs(err1), abs(err2)) > tol
+            if not_bracketing and err2 < err1:
+                a, b = b, a
+                err1, err2 = err2, err1
 
-            lower_a = torch.minimum(a, secant)
-            upper_a = torch.maximum(a, secant)
-            err_lower_a = torch.where(a <= secant, err_a, err_secant)
-            err_upper_a = torch.where(a <= secant, err_secant, err_a)
-
-            lower_b = torch.minimum(b, secant)
-            upper_b = torch.maximum(b, secant)
-            err_lower_b = torch.where(b <= secant, err_b, err_secant)
-            err_upper_b = torch.where(b <= secant, err_secant, err_b)
-
-            lower = torch.where(bracket_a_secant, lower_a, lower)
-            upper = torch.where(bracket_a_secant, upper_a, upper)
-            err_lower = torch.where(bracket_a_secant, err_lower_a, err_lower)
-            err_upper = torch.where(bracket_a_secant, err_upper_a, err_upper)
-
-            lower = torch.where(bracket_b_secant, lower_b, lower)
-            upper = torch.where(bracket_b_secant, upper_b, upper)
-            err_lower = torch.where(bracket_b_secant, err_lower_b, err_lower)
-            err_upper = torch.where(bracket_b_secant, err_upper_b, err_upper)
-
-            bracketed = bracketed | bracket_a_secant | bracket_b_secant
-
-        for _ in range(max_iter):
-            active = bracketed & ((upper - lower).abs() > tol)
-            if not active.any():
-                break
-            fcount += 1
-            mid = 0.5 * (lower + upper)
-            err_mid = self._ci_error(
-                mid,
-                Cs=Cs,
-                RH=RH,
-                min_ci=min_ci,
-                BallBerrySlope=BallBerrySlope,
-                BallBerry0=BallBerry0,
-                ppm2bar=ppm2bar,
-                canopy_type=canopy_type,
-                g_m=g_m,
-                Vs_C3=Vs_C3,
-                MM_consts=MM_consts,
-                Rd=Rd,
-                Vcmax=Vcmax,
-                Gamma_star=Gamma_star,
-                Je=Je,
-                effcon=effcon,
-                Ke=Ke,
-            )
-            same_sign = (err_mid >= 0.0) == (err_lower >= 0.0)
-            move_lower = active & same_sign
-            move_upper = active & ~same_sign
-            lower = torch.where(move_lower, mid, lower)
-            err_lower = torch.where(move_lower, err_mid, err_lower)
-            upper = torch.where(move_upper, mid, upper)
-            err_upper = torch.where(move_upper, err_mid, err_upper)
-
-        ci = torch.where(bracketed, 0.5 * (lower + upper), ci)
-
-        fallback = (~zero_intercept) & ~bracketed
-        if fallback.any():
-            fixed_point = ci.clone()
-            for _ in range(max_iter):
-                assimilation = self._compute_assimilation(
-                    Ci=fixed_point,
+            tries = 1
+            while not_bracketing and err1 > 0.0:
+                diffab = b - a
+                a = a - diffab
+                err1, _ = self._ci_step_scalar(
+                    a,
+                    Cs=Cs,
+                    RH=RH,
+                    min_ci=min_ci,
+                    BallBerrySlope=BallBerrySlope,
+                    BallBerry0=BallBerry0,
+                    ppm2bar=ppm2bar,
                     canopy_type=canopy_type,
                     g_m=g_m,
                     Vs_C3=Vs_C3,
@@ -557,21 +560,213 @@ class LeafBiochemistryModel:
                     effcon=effcon,
                     Ke=Ke,
                 )
-                fixed_next = self._ball_berry(
-                    Cs,
-                    RH,
-                    assimilation["A"] * ppm2bar,
-                    BallBerrySlope,
-                    BallBerry0,
-                    min_ci,
+                fcount += 1
+                if err2 < err1:
+                    a, b = b, a
+                    err1, err2 = err2, err1
+                not_bracketing = self._same_sign(err1, err2) and min(abs(err1), abs(err2)) > tol
+                tries += 1
+                if not_bracketing and tries > 10:
+                    break
+
+            if not_bracketing and err2 < 0.0:
+                b = 0.0
+                err2, _ = self._ci_step_scalar(
+                    b,
+                    Cs=Cs,
+                    RH=RH,
+                    min_ci=min_ci,
+                    BallBerrySlope=BallBerrySlope,
+                    BallBerry0=BallBerry0,
+                    ppm2bar=ppm2bar,
+                    canopy_type=canopy_type,
+                    g_m=g_m,
+                    Vs_C3=Vs_C3,
+                    MM_consts=MM_consts,
+                    Rd=Rd,
+                    Vcmax=Vcmax,
+                    Gamma_star=Gamma_star,
+                    Je=Je,
+                    effcon=effcon,
+                    Ke=Ke,
                 )
                 fcount += 1
-                converged = torch.abs(fixed_next - fixed_point) <= tol
-                fixed_point = torch.where(fallback, fixed_next, fixed_point)
-                if not (fallback & ~converged).any():
-                    break
-            ci = torch.where(fallback, fixed_point, ci)
-        return {"Ci": ci, "fcount": fcount}
+            recompute_b = True
+
+        if abs(err1) < abs(err2):
+            a, b = b, a
+            err1, err2 = err2, err1
+            recompute_b = True
+
+        ab_gap = a - b
+        c, err3 = a, err1
+        best_is_unchanged = abs(err2) == abs(err1)
+        xstep = 3.0 * ab_gap
+        xstep1 = 3.0 * ab_gap
+        p = 0.0
+        q = 1.0
+        accel_bi = 0.0
+        counter = 0
+        err_outside_tol = abs(err2) > tol
+
+        while err_outside_tol:
+            xstep2 = xstep1
+            xstep1 = xstep
+            p = 0.0
+            xstep = 0.0
+            use_bisection = abs(xstep2) < tolx or best_is_unchanged
+            r2 = err2 / err1
+            try_interp = (not use_bisection) and err_outside_tol
+            quad_is_safe = err1 != err3 and err2 != err3
+
+            if try_interp and quad_is_safe:
+                r1 = err3 / err1
+                r3 = err2 / err3
+                p = r3 * (ab_gap * r1 * (r1 - r2) - (b - c) * (r2 - 1.0))
+                q = (r1 - 1.0) * (r2 - 1.0) * (r3 - 1.0)
+            elif try_interp:
+                p = ab_gap * r2
+                q = 1.0 - r2
+
+            if try_interp and q != 0.0:
+                xstep = p / q
+
+            bi_test1 = abs(p) >= 0.75 * abs(ab_gap * q) - 0.5 * abs(tolx * q)
+            bi_test3 = abs(p) >= 0.5 * abs(xstep2 * q)
+            use_bisection = (use_bisection or bi_test1 or bi_test3) and err_outside_tol
+
+            if use_bisection:
+                m = -ab_gap / (2.0 + accel_bi)
+                xstep = m
+                xstep1 = m
+
+            s = b - xstep
+            err_s, _ = self._ci_step_scalar(
+                s,
+                Cs=Cs,
+                RH=RH,
+                min_ci=min_ci,
+                BallBerrySlope=BallBerrySlope,
+                BallBerry0=BallBerry0,
+                ppm2bar=ppm2bar,
+                canopy_type=canopy_type,
+                g_m=g_m,
+                Vs_C3=Vs_C3,
+                MM_consts=MM_consts,
+                Rd=Rd,
+                Vcmax=Vcmax,
+                Gamma_star=Gamma_star,
+                Je=Je,
+                effcon=effcon,
+                Ke=Ke,
+            )
+            fcount += 1
+            counter += 1
+            if counter > max_iter:
+                break
+
+            if abs(err_s) <= tol:
+                b = s
+                err2 = err_s
+                err_outside_tol = False
+                recompute_b = False
+                continue
+
+            best_is_unchanged = abs(err_s) > abs(err2)
+            c, err3 = b, err2
+
+            s_b_sign_match = self._same_sign(err_s, err2)
+            err_s_is_best = abs(err_s) <= abs(err2)
+            a_into_b = s_b_sign_match and (not err_s_is_best)
+            if a_into_b:
+                b, err2 = a, err1
+
+            b_into_a = (not s_b_sign_match) and err_s_is_best
+            if b_into_a:
+                c, err3 = a, err1
+                a, err1 = b, err2
+
+            if err_s_is_best:
+                b, err2 = s, err_s
+            else:
+                a, err1 = s, err_s
+                xstep1 = xstep
+
+            ab_gap = a - b
+            err_outside_tol = abs(err2) > tol
+            recompute_b = True
+
+        if recompute_b:
+            err2, _ = self._ci_step_scalar(
+                b,
+                Cs=Cs,
+                RH=RH,
+                min_ci=min_ci,
+                BallBerrySlope=BallBerrySlope,
+                BallBerry0=BallBerry0,
+                ppm2bar=ppm2bar,
+                canopy_type=canopy_type,
+                g_m=g_m,
+                Vs_C3=Vs_C3,
+                MM_consts=MM_consts,
+                Rd=Rd,
+                Vcmax=Vcmax,
+                Gamma_star=Gamma_star,
+                Je=Je,
+                effcon=effcon,
+                Ke=Ke,
+            )
+            fcount += 1
+        return torch.full_like(Cs, b), fcount
+
+    def _ci_step_scalar(
+        self,
+        ci_in: float,
+        *,
+        Cs: torch.Tensor,
+        RH: torch.Tensor,
+        min_ci: float,
+        BallBerrySlope: torch.Tensor,
+        BallBerry0: torch.Tensor,
+        ppm2bar: torch.Tensor,
+        canopy_type: str,
+        g_m: torch.Tensor,
+        Vs_C3: torch.Tensor,
+        MM_consts: torch.Tensor,
+        Rd: torch.Tensor,
+        Vcmax: torch.Tensor,
+        Gamma_star: torch.Tensor,
+        Je: torch.Tensor,
+        effcon: torch.Tensor,
+        Ke: torch.Tensor,
+    ) -> tuple[float, float]:
+        ci_tensor = torch.full_like(Cs, ci_in)
+        assimilation = self._compute_assimilation(
+            Ci=ci_tensor,
+            canopy_type=canopy_type,
+            g_m=g_m,
+            Vs_C3=Vs_C3,
+            MM_consts=MM_consts,
+            Rd=Rd,
+            Vcmax=Vcmax,
+            Gamma_star=Gamma_star,
+            Je=Je,
+            effcon=effcon,
+            Ke=Ke,
+        )
+        ci_out = self._ball_berry(
+            Cs,
+            RH,
+            assimilation["A"] * ppm2bar,
+            BallBerrySlope,
+            BallBerry0,
+            min_ci,
+        )
+        err = float((ci_out - ci_tensor).item())
+        return err, float(ci_out.item())
+
+    def _same_sign(self, a: float, b: float) -> bool:
+        return (a > 0.0 and b > 0.0) or (a < 0.0 and b < 0.0)
 
     def _ci_error(
         self,

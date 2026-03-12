@@ -99,6 +99,32 @@ def test_energy_balance_converges_and_closes_fluxes():
     assert torch.allclose(result.Htot, result.Hctot + result.Hstot, atol=1e-10, rtol=1e-10)
 
 
+def test_energy_balance_fv_profile_uses_upper_layer_edges():
+    model, leafbio, _, soil_refl, lai, tts, tto, psi, Esun_sw, Esky_sw, _, canopy, _, _ = _setup_energy_case()
+
+    leafopt = model.reflectance_model.fluspect(leafbio)
+    shortwave = model._shortwave_radiation(
+        leafopt=leafopt,
+        soil_refl=soil_refl,
+        lai=lai,
+        tts=tts,
+        tto=tto,
+        psi=psi,
+        Esun_sw=Esun_sw,
+        Esky_sw=Esky_sw,
+        hotspot=torch.full_like(lai, model.reflectance_model.default_hotspot),
+        lidf=None,
+        nlayers=4,
+    )
+
+    fV = model._fV_profile(canopy, shortwave.transfer, batch=1)
+    kV = torch.as_tensor(canopy.kV, device=fV.device, dtype=fV.dtype).view(1, 1)
+    expected = torch.exp(kV * shortwave.transfer.xl[:-1].view(1, -1))
+
+    assert torch.allclose(fV, expected, atol=1e-12, rtol=1e-10)
+    assert torch.allclose(fV[:, 0], torch.ones_like(fV[:, 0]), atol=1e-12, rtol=1e-10)
+
+
 def test_energy_balance_fluorescence_matches_manual_eta_transport():
     model, leafbio, biochemistry, soil_refl, lai, tts, tto, psi, Esun_sw, Esky_sw, meteo, canopy, soil, options = _setup_energy_case()
 
