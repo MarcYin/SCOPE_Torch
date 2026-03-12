@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import subprocess
@@ -11,6 +12,14 @@ from typing import Any
 
 
 DEFAULT_MATLAB = "/Applications/MATLAB_R2025b.app/bin/matlab"
+NONCONVERGED_ENERGY_PREFIXES = ("energy_balance.", "energy_iteration_input.")
+
+
+def _discover_default_cases(repo_root: Path) -> list[int]:
+    latin_hypercube = repo_root / "upstream" / "SCOPE" / "input" / "input_data_latin_hypercube.csv"
+    with latin_hypercube.open(newline="", encoding="utf-8") as handle:
+        max_cols = max(len(row) for row in csv.reader(handle))
+    return list(range(1, max_cols))
 
 
 def _case_id(case_index: int) -> str:
@@ -52,7 +61,9 @@ def _filtered_worst_cases(
     per_case: dict[str, dict[str, dict[str, dict[str, float]]]],
     *,
     exclude: set[str],
+    nonconverged_energy_cases: set[str] | None = None,
 ) -> dict[str, dict[str, dict[str, Any]]]:
+    nonconverged_energy_cases = set() if nonconverged_energy_cases is None else nonconverged_energy_cases
     filtered: dict[str, dict[str, dict[str, dict[str, float]]]] = {}
     for case_id, report in per_case.items():
         case_report: dict[str, dict[str, dict[str, float]]] = {}
@@ -61,6 +72,33 @@ def _filtered_worst_cases(
                 name: values
                 for name, values in metrics.items()
                 if f"{section}.{name}" not in exclude
+                and not (
+                    case_id in nonconverged_energy_cases
+                    and any(f"{section}.{name}".startswith(prefix) for prefix in NONCONVERGED_ENERGY_PREFIXES)
+                )
+            }
+            if kept:
+                case_report[section] = kept
+        filtered[case_id] = case_report
+    return _worst_cases(filtered)
+
+
+def _subset_worst_cases(
+    per_case: dict[str, dict[str, dict[str, dict[str, float]]]],
+    *,
+    include_cases: set[str],
+    include_prefixes: tuple[str, ...] | None = None,
+) -> dict[str, dict[str, dict[str, Any]]]:
+    filtered: dict[str, dict[str, dict[str, dict[str, float]]]] = {}
+    for case_id, report in per_case.items():
+        if case_id not in include_cases:
+            continue
+        case_report: dict[str, dict[str, dict[str, float]]] = {}
+        for section, metrics in report.items():
+            kept = {
+                name: values
+                for name, values in metrics.items()
+                if include_prefixes is None or any(f"{section}.{name}".startswith(prefix) for prefix in include_prefixes)
             }
             if kept:
                 case_report[section] = kept
@@ -112,7 +150,7 @@ def _compare_benchmarks(
     reports_dir: Path,
     cases: list[int],
     device: str,
-) -> dict[str, dict[str, dict[str, dict[str, float]]]]:
+) -> tuple[dict[str, dict[str, dict[str, dict[str, float]]]], dict[str, dict[str, Any]]]:
     reports_dir.mkdir(parents=True, exist_ok=True)
     compare_script = repo_root / "scripts" / "compare_scope_benchmark.py"
     env = os.environ.copy()
@@ -120,6 +158,7 @@ def _compare_benchmarks(
     env["PYTHONPATH"] = "src" if not pythonpath else f"src{os.pathsep}{pythonpath}"
 
     per_case: dict[str, dict[str, dict[str, dict[str, float]]]] = {}
+    case_status: dict[str, dict[str, Any]] = {}
     for case_index in cases:
         case_id = _case_id(case_index)
         benchmark_path = benchmark_dir / f"scope_case_{case_id}.mat"
@@ -140,17 +179,21 @@ def _compare_benchmarks(
             env=env,
             stdout=subprocess.DEVNULL,
         )
-        per_case[case_id] = _load_json(report_path)
-    return per_case
+        loaded = _load_json(report_path)
+        case_status[case_id] = loaded.pop("benchmark_status", {})
+        per_case[case_id] = loaded
+    return per_case, case_status
 
 
 def main() -> int:
+    repo_root = Path(__file__).resolve().parents[1]
+    default_cases = _discover_default_cases(repo_root)
     parser = argparse.ArgumentParser(description="Export and compare multiple MATLAB SCOPE benchmark scenes.")
     parser.add_argument(
         "--cases",
         type=int,
         nargs="+",
-        default=list(range(1, 11)),
+        default=default_cases,
         help="Case indices to export and compare.",
     )
     parser.add_argument(
@@ -183,7 +226,6 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    repo_root = Path(__file__).resolve().parents[1]
     benchmark_dir = args.benchmark_dir
     reports_dir = args.reports_dir if args.reports_dir.is_absolute() else repo_root / args.reports_dir
     summary_json = args.summary_json if args.summary_json.is_absolute() else repo_root / args.summary_json
@@ -195,7 +237,7 @@ def main() -> int:
         benchmark_dir=benchmark_dir,
         cases=cases,
     )
-    per_case = _compare_benchmarks(
+    per_case, case_status = _compare_benchmarks(
         repo_root=repo_root,
         benchmark_dir=benchmark_dir,
         reports_dir=reports_dir,
@@ -203,11 +245,25 @@ def main() -> int:
         device=args.device,
     )
     worst = _worst_cases(per_case)
+    nonconverged_energy_cases = {
+        case_id
+        for case_id, status in case_status.items()
+        if status and not status.get("energy_converged", True)
+    }
     parity_exclude = {
         "energy_balance.sunlit_A",
         "energy_balance.shaded_A",
     }
-    parity_worst = _filtered_worst_cases(per_case, exclude=parity_exclude)
+    parity_worst = _filtered_worst_cases(
+        per_case,
+        exclude=parity_exclude,
+        nonconverged_energy_cases=nonconverged_energy_cases,
+    )
+    stress_worst = _subset_worst_cases(
+        per_case,
+        include_cases=nonconverged_energy_cases,
+        include_prefixes=NONCONVERGED_ENERGY_PREFIXES,
+    )
     highlights = _highlight(
         parity_worst,
         keys=[
@@ -242,10 +298,18 @@ def main() -> int:
         "cases": cases,
         "benchmark_dir": _stable_summary_path(benchmark_dir, repo_root),
         "reports_dir": _stable_summary_path(reports_dir, repo_root),
+        "case_status": case_status,
+        "nonconverged_energy_cases": sorted(nonconverged_energy_cases),
+        "parity_policy": {
+            "always_excluded_metrics": sorted(parity_exclude),
+            "nonconverged_energy_metric_prefixes": list(NONCONVERGED_ENERGY_PREFIXES),
+            "nonconverged_energy_case_rule": "Exclude energy-balance and energy-iteration parity metrics for upstream scenes that hit ebal max iterations; retain them as stress diagnostics.",
+        },
         "per_case": per_case,
         "worst_cases": worst,
         "parity_exclude": sorted(parity_exclude),
         "parity_worst_cases": parity_worst,
+        "stress_worst_cases": stress_worst,
         "highlights": highlights,
     }
     summary_json.parent.mkdir(parents=True, exist_ok=True)

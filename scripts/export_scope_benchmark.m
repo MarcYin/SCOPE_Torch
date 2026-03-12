@@ -243,6 +243,7 @@ benchmark.Esun_wlE = rad.Esun_(IwlE);
 benchmark.Esky_wlE = rad.Esky_(IwlE);
 benchmark.Esun_wlT = rad.Esun_(IwlT);
 benchmark.Esky_wlT = rad.Esky_(IwlT);
+benchmark.Esky_full_max = max(rad.Esky_);
 benchmark.Esun_rtmf = rad.Esun_(iwlfi);
 benchmark.Esky_rtmf = rad.Esky_(iwlfi);
 
@@ -345,6 +346,13 @@ benchmark.energy_Rnus = rad.Rnus + rad.Rnust;
 benchmark.energy_Rnhs = rad.Rnhs + rad.Rnhst;
 benchmark.energy_canopyemis = rad.canopyemis;
 benchmark.energy_counter = iter.counter;
+benchmark.energy_maxit = iter.maxit;
+benchmark.energy_max_energy_error = iter.max_energy_error;
+benchmark.energy_upstream_converged = iter.energy_converged;
+benchmark.energy_hit_max_iterations = iter.hit_max_iterations;
+benchmark.energy_final_max_error_sunlit = iter.max_energy_error_sunlit;
+benchmark.energy_final_max_error_shaded = iter.max_energy_error_shaded;
+benchmark.energy_final_max_error_soil = iter.max_energy_error_soil;
 
 benchmark.flux_Rnctot = fluxes.Rnctot;
 benchmark.flux_lEctot = fluxes.lEctot;

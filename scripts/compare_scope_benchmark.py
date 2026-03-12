@@ -87,11 +87,22 @@ def _metrics(predicted: torch.Tensor, reference: torch.Tensor) -> dict[str, floa
     }
 
 
-def _scope_refl_from_rso_rdo(rso: torch.Tensor, rdo: torch.Tensor, esun: torch.Tensor, esky: torch.Tensor) -> torch.Tensor:
+def _scope_refl_from_rso_rdo(
+    rso: torch.Tensor,
+    rdo: torch.Tensor,
+    esun: torch.Tensor,
+    esky: torch.Tensor,
+    *,
+    esky_max: float | torch.Tensor | None = None,
+) -> torch.Tensor:
     total = esun + esky
     refl = (rso * esun + rdo * esky) / total.clamp(min=1e-12)
+    if esky_max is None:
+        esky_full_max = torch.max(esky)
+    else:
+        esky_full_max = torch.as_tensor(esky_max, device=esky.device, dtype=esky.dtype)
     refl = torch.where(esky < 1e-4, rso, refl)
-    refl = torch.where(esky < (2e-4 * torch.max(esky)), rso, refl)
+    refl = torch.where(esky < (2e-4 * esky_full_max), rso, refl)
     return refl
 
 
@@ -109,6 +120,35 @@ def _print_report(report: dict[str, dict[str, dict[str, float]]]) -> None:
                 f"max_rel={values['max_rel']:.6e} "
                 f"mean_abs={values['mean_abs']:.6e}"
             )
+
+
+def _benchmark_status(benchmark: dict[str, Any]) -> dict[str, Any]:
+    energy_counter = _scalar(benchmark["energy_counter"])
+    energy_maxit = _scalar(benchmark["energy_maxit"]) if "energy_maxit" in benchmark else 100.0
+    energy_converged = (
+        bool(benchmark["energy_upstream_converged"])
+        if "energy_upstream_converged" in benchmark
+        else energy_counter < energy_maxit
+    )
+    hit_max_iterations = (
+        bool(benchmark["energy_hit_max_iterations"])
+        if "energy_hit_max_iterations" in benchmark
+        else energy_counter >= energy_maxit
+    )
+    status: dict[str, Any] = {
+        "energy_counter": energy_counter,
+        "energy_maxit": energy_maxit,
+        "energy_max_energy_error": (
+            _scalar(benchmark["energy_max_energy_error"]) if "energy_max_energy_error" in benchmark else 1.0
+        ),
+        "energy_converged": energy_converged,
+        "energy_hit_max_iterations": hit_max_iterations,
+    }
+    for name in ("sunlit", "shaded", "soil"):
+        key = f"energy_final_max_error_{name}"
+        if key in benchmark:
+            status[key] = _scalar(benchmark[key])
+    return status
 
 
 def main() -> int:
@@ -194,9 +234,19 @@ def main() -> int:
     esky_wle = _batch_spectrum(benchmark["Esky_wlE"], device=device, dtype=dtype)
     esun_rtmf = _batch_spectrum(benchmark["Esun_rtmf"], device=device, dtype=dtype)
     esky_rtmf = _batch_spectrum(benchmark["Esky_rtmf"], device=device, dtype=dtype)
+    esky_full_max = (
+        _scalar(benchmark["Esky_full_max"])
+        if "Esky_full_max" in benchmark
+        else max(
+            float(torch.max(esky_wlp).item()),
+            float(torch.max(esky_wle).item()),
+            float(torch.max(esky_wlt).item()),
+        )
+    )
     nlayers = int(_scalar(benchmark["nlayers"]))
 
     report: dict[str, dict[str, dict[str, float]]] = {}
+    benchmark_status = _benchmark_status(benchmark)
 
     leafopt = fluspect(leafbio)
     leafopt_rtmf = fluspect_rtmf(leafbio)
@@ -210,7 +260,13 @@ def main() -> int:
     _record(report, "reflectance", "rdd", canopy.rdd[0], _vector(benchmark["canopy_rdd"], device=device, dtype=dtype))
     _record(report, "reflectance", "rdo", canopy.rdo[0], _vector(benchmark["canopy_rdo"], device=device, dtype=dtype))
     _record(report, "reflectance", "rso", canopy.rso[0], _vector(benchmark["canopy_rso"], device=device, dtype=dtype))
-    canopy_refl = _scope_refl_from_rso_rdo(canopy.rso[0], canopy.rdo[0], esun_wlp[0], esky_wlp[0])
+    canopy_refl = _scope_refl_from_rso_rdo(
+        canopy.rso[0],
+        canopy.rdo[0],
+        esun_wlp[0],
+        esky_wlp[0],
+        esky_max=esky_full_max,
+    )
     _record(report, "reflectance", "refl", canopy_refl, _vector(benchmark["canopy_refl"], device=device, dtype=dtype))
 
     etau = _batch_profile(benchmark["energy_sunlit_eta"], device=device, dtype=dtype)
@@ -488,7 +544,7 @@ def main() -> int:
 
     if args.report_json is not None:
         args.report_json.parent.mkdir(parents=True, exist_ok=True)
-        args.report_json.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        args.report_json.write_text(json.dumps({"benchmark_status": benchmark_status, **report}, indent=2), encoding="utf-8")
         print(f"\nWrote JSON report to {args.report_json}")
 
     return 0

@@ -38,6 +38,9 @@ def test_scope_benchmark_locked_subsystems(tmp_path):
     )
 
     report = json.loads(report_path.read_text(encoding="utf-8"))
+    status = report["benchmark_status"]
+    assert status["energy_converged"] is True
+    assert status["energy_hit_max_iterations"] is False
 
     leaf = report["leaf"]
     for name in ("refl", "tran", "Mb", "Mf"):
