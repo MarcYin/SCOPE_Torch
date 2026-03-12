@@ -10,7 +10,7 @@ from ..canopy.fluorescence import CanopyFluorescenceModel, CanopyFluorescenceRes
 from ..canopy.foursail import FourSAILModel
 from ..canopy.layered_rt import LayeredCanopyTransfer
 from ..canopy.reflectance import CanopyReflectanceModel
-from ..canopy.thermal import CanopyThermalRadianceModel, ThermalOptics
+from ..canopy.thermal import CanopyThermalRadianceModel, CanopyThermalRadianceResult, ThermalOptics
 from ..spectral.fluspect import LeafBioBatch
 from ..spectral.soil import SoilEmpiricalParams
 from .fluxes import HeatFluxInputs, ResistanceInputs, aerodynamic_resistances, heat_fluxes
@@ -138,6 +138,12 @@ class CanopyEnergyBalanceResult:
 class CanopyEnergyBalanceFluorescenceResult:
     energy: CanopyEnergyBalanceResult
     fluorescence: CanopyFluorescenceResult
+
+
+@dataclass(slots=True)
+class CanopyEnergyBalanceThermalResult:
+    energy: CanopyEnergyBalanceResult
+    thermal: CanopyThermalRadianceResult
 
 
 class CanopyEnergyBalanceModel:
@@ -603,6 +609,98 @@ class CanopyEnergyBalanceModel:
             Tsu0=Tsu0,
             Tsh0=Tsh0,
         )
+        fluorescence = self._fluorescence_from_energy(
+            energy=energy,
+            leafbio=leafbio,
+            soil_refl=soil_refl,
+            lai=lai,
+            tts=tts,
+            tto=tto,
+            psi=psi,
+            Esun_sw=Esun_sw,
+            Esky_sw=Esky_sw,
+            hotspot=hotspot,
+            lidf=lidf,
+        )
+        return CanopyEnergyBalanceFluorescenceResult(energy=energy, fluorescence=fluorescence)
+
+    def solve_thermal(
+        self,
+        leafbio: LeafBioBatch,
+        biochemistry: LeafBiochemistryInputs,
+        soil_refl: torch.Tensor,
+        lai: torch.Tensor,
+        tts: torch.Tensor,
+        tto: torch.Tensor,
+        psi: torch.Tensor,
+        Esun_sw: torch.Tensor,
+        Esky_sw: torch.Tensor,
+        *,
+        meteo: EnergyBalanceMeteo,
+        canopy: EnergyBalanceCanopy,
+        soil: EnergyBalanceSoil,
+        options: Optional[EnergyBalanceOptions] = None,
+        biochem_options: Optional[BiochemicalOptions] = None,
+        hotspot: Optional[torch.Tensor] = None,
+        lidf: Optional[torch.Tensor] = None,
+        nlayers: Optional[int] = None,
+        Tcu0: Optional[torch.Tensor] = None,
+        Tch0: Optional[torch.Tensor] = None,
+        Tsu0: Optional[torch.Tensor] = None,
+        Tsh0: Optional[torch.Tensor] = None,
+        wlT: Optional[torch.Tensor] = None,
+    ) -> CanopyEnergyBalanceThermalResult:
+        energy = self.solve(
+            leafbio,
+            biochemistry,
+            soil_refl,
+            lai,
+            tts,
+            tto,
+            psi,
+            Esun_sw,
+            Esky_sw,
+            meteo=meteo,
+            canopy=canopy,
+            soil=soil,
+            options=options,
+            biochem_options=biochem_options,
+            hotspot=hotspot,
+            lidf=lidf,
+            nlayers=nlayers,
+            Tcu0=Tcu0,
+            Tch0=Tch0,
+            Tsu0=Tsu0,
+            Tsh0=Tsh0,
+        )
+        thermal = self._thermal_from_energy(
+            energy=energy,
+            lai=lai,
+            tts=tts,
+            tto=tto,
+            psi=psi,
+            thermal_optics=soil.thermal_optics,
+            hotspot=hotspot,
+            lidf=lidf,
+            wlT=wlT,
+        )
+        return CanopyEnergyBalanceThermalResult(energy=energy, thermal=thermal)
+
+    def _fluorescence_from_energy(
+        self,
+        *,
+        energy: CanopyEnergyBalanceResult,
+        leafbio: LeafBioBatch,
+        soil_refl: torch.Tensor,
+        lai: torch.Tensor,
+        tts: torch.Tensor,
+        tto: torch.Tensor,
+        psi: torch.Tensor,
+        Esun_sw: torch.Tensor,
+        Esky_sw: torch.Tensor,
+        hotspot: Optional[torch.Tensor],
+        lidf: Optional[torch.Tensor],
+    ) -> CanopyFluorescenceResult:
         wlP = self.reflectance_model.fluspect.spectral.wlP
         wlE = self.reflectance_model.fluspect.spectral.wlE
         if wlE is None:
@@ -627,7 +725,36 @@ class CanopyEnergyBalanceModel:
             lidf=lidf,
             nlayers=energy.Tcu.shape[1],
         )
-        return CanopyEnergyBalanceFluorescenceResult(energy=energy, fluorescence=fluorescence)
+        return fluorescence
+
+    def _thermal_from_energy(
+        self,
+        *,
+        energy: CanopyEnergyBalanceResult,
+        lai: torch.Tensor,
+        tts: torch.Tensor,
+        tto: torch.Tensor,
+        psi: torch.Tensor,
+        thermal_optics: ThermalOptics,
+        hotspot: Optional[torch.Tensor],
+        lidf: Optional[torch.Tensor],
+        wlT: Optional[torch.Tensor],
+    ) -> CanopyThermalRadianceResult:
+        return self.thermal_model(
+            lai=lai,
+            tts=tts,
+            tto=tto,
+            psi=psi,
+            Tcu=energy.Tcu,
+            Tch=energy.Tch,
+            Tsu=energy.Tsu,
+            Tsh=energy.Tsh,
+            thermal_optics=thermal_optics,
+            hotspot=hotspot,
+            lidf=lidf,
+            nlayers=energy.Tcu.shape[1],
+            wlT=wlT,
+        )
 
     def _shortwave_radiation(
         self,

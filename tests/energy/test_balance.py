@@ -2,6 +2,7 @@ import torch
 
 from scope_torch.biochem import LeafBiochemistryInputs
 from scope_torch.canopy.fluorescence import CanopyFluorescenceResult
+from scope_torch.canopy.thermal import CanopyThermalRadianceResult
 from scope_torch.canopy.foursail import FourSAILModel, campbell_lidf
 from scope_torch.canopy.reflectance import CanopyReflectanceModel
 from scope_torch.energy import (
@@ -138,6 +139,43 @@ def test_energy_balance_fluorescence_matches_manual_eta_transport():
 
     for name in CanopyFluorescenceResult.__dataclass_fields__:
         assert torch.allclose(getattr(result.fluorescence, name), getattr(manual, name), atol=1e-10, rtol=1e-10)
+
+
+def test_energy_balance_thermal_matches_manual_solved_temperature_path():
+    model, leafbio, biochemistry, soil_refl, lai, tts, tto, psi, Esun_sw, Esky_sw, meteo, canopy, soil, options = _setup_energy_case()
+
+    result = model.solve_thermal(
+        leafbio,
+        biochemistry,
+        soil_refl,
+        lai,
+        tts,
+        tto,
+        psi,
+        Esun_sw,
+        Esky_sw,
+        meteo=meteo,
+        canopy=canopy,
+        soil=soil,
+        options=options,
+        nlayers=4,
+    )
+
+    manual = model.thermal_model(
+        lai,
+        tts,
+        tto,
+        psi,
+        result.energy.Tcu,
+        result.energy.Tch,
+        result.energy.Tsu,
+        result.energy.Tsh,
+        thermal_optics=soil.thermal_optics,
+        nlayers=4,
+    )
+
+    for name in CanopyThermalRadianceResult.__dataclass_fields__:
+        assert torch.allclose(getattr(result.thermal, name), getattr(manual, name), atol=1e-10, rtol=1e-10)
 
 
 def test_energy_balance_soil_history_accepts_batched_dt_seconds():
