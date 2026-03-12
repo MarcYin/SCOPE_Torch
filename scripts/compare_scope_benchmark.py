@@ -188,6 +188,8 @@ def main() -> int:
     psi = torch.tensor([_scalar(benchmark["psi"])], device=device, dtype=dtype)
     esun_wlp = _batch_spectrum(benchmark["Esun_wlP"], device=device, dtype=dtype)
     esky_wlp = _batch_spectrum(benchmark["Esky_wlP"], device=device, dtype=dtype)
+    esun_wlt = _batch_spectrum(benchmark["Esun_wlT"], device=device, dtype=dtype)
+    esky_wlt = _batch_spectrum(benchmark["Esky_wlT"], device=device, dtype=dtype)
     esun_wle = _batch_spectrum(benchmark["Esun_wlE"], device=device, dtype=dtype)
     esky_wle = _batch_spectrum(benchmark["Esky_wlE"], device=device, dtype=dtype)
     esun_rtmf = _batch_spectrum(benchmark["Esun_rtmf"], device=device, dtype=dtype)
@@ -252,9 +254,31 @@ def main() -> int:
         esky_wle,
         etau=etau,
         etah=etah,
+        Pnu_Cab=_batch_profile(benchmark["energy_Pnu_Cab"], device=device, dtype=dtype),
+        Pnh_Cab=_batch_profile(benchmark["energy_Pnh_Cab"], device=device, dtype=dtype),
         hotspot=hotspot,
         nlayers=nlayers,
     )
+    _record(report, "fluorescence_transport", "PoutFrc", fluorescence_model._layered_source_poutfrc(
+        leafopt=fluspect(leafbio),
+        leafbio=leafbio,
+        soil_refl=soil_refl,
+        lai=lai,
+        tts=tts,
+        tto=tto,
+        psi=psi,
+        Esun=esun_wle,
+        Esky=esky_wle,
+        hotspot=hotspot,
+        lidf=None,
+        nlayers=nlayers,
+        etau=etau,
+        etah=etah,
+        Pnu_Cab=_batch_profile(benchmark["energy_Pnu_Cab"], device=device, dtype=dtype),
+        Pnh_Cab=_batch_profile(benchmark["energy_Pnh_Cab"], device=device, dtype=dtype),
+        wlP=fluspect.spectral.wlP,
+        wlE=fluspect.spectral.wlE,
+    ), torch.tensor([_scalar(benchmark["fluor_PoutFrc"])], device=device, dtype=dtype))
     _record(report, "fluorescence_transport", "LoF_", fluorescence.LoF_[0], _vector(benchmark["fluor_LoF"], device=device, dtype=dtype))
     _record(report, "fluorescence_transport", "EoutF_", fluorescence.EoutF_[0], _vector(benchmark["fluor_EoutF"], device=device, dtype=dtype))
     _record(report, "fluorescence_transport", "EoutFrc_", fluorescence.EoutFrc_[0], _vector(benchmark["fluor_EoutFrc"], device=device, dtype=dtype))
@@ -359,6 +383,9 @@ def main() -> int:
         psi,
         esun_wlp,
         esky_wlp,
+        Esun_lw=esun_wlt,
+        Esky_lw=esky_wlt,
+        wlT=_vector(benchmark["wlT"], device=device, dtype=dtype),
         meteo=meteo,
         canopy=canopy_state,
         soil=soil_state,

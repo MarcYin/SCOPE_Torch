@@ -128,6 +128,7 @@ end
 soil.refl(spectral.IwlT) = soil.rs_thermal;
 
 [rad, gap] = RTMo(spectral, atmo, soil, leafopt, canopy, angles, constants, meteo, options); %#ok<ASGLU>
+optical_diag = rtmo_observation_diagnostics(spectral, rad, soil, canopy, gap);
 [iter, rad, thermal, soil, bcu, bch, fluxes, resistance, meteo] = ebal(constants, options, rad, gap, meteo, soil, canopy, leafbio, case_index, xyt, integr);
 
 if options.calc_fluor
@@ -139,12 +140,14 @@ if options.calc_fluor
         meanleaf(canopy, bch.eta .* rad.Pnh_Cab, 'layers', Ph) + ...
         meanleaf(canopy, bcu.eta .* rad.Pnu_Cab, integr, Ps) ...
     );
+    fluor_PoutFrc = leafbio.fqe * aPAR_Cab_eta;
     ep = constants.A * ephoton(spectral.wlF' * 1E-9, constants);
-    fluor_EoutFrc = 1E-3 * ep .* (leafbio.fqe * aPAR_Cab_eta * optipar.phi(spectral.IwlF));
+    fluor_EoutFrc = 1E-3 * ep .* (fluor_PoutFrc * optipar.phi(spectral.IwlF));
     sigmaF_raw = pi * rad.LoF_ ./ fluor_EoutFrc;
     fluor_sigmaF = interp1(spectral.wlF(1:4:end), sigmaF_raw(1:4:end), spectral.wlF);
 else
     fluor_diag = struct;
+    fluor_PoutFrc = nan;
     fluor_EoutFrc = nan(size(spectral.wlF(:)));
     fluor_sigmaF = nan(size(spectral.wlF(:)));
 end
@@ -234,6 +237,8 @@ benchmark.Esun_wlP = rad.Esun_(IwlP);
 benchmark.Esky_wlP = rad.Esky_(IwlP);
 benchmark.Esun_wlE = rad.Esun_(IwlE);
 benchmark.Esky_wlE = rad.Esky_(IwlE);
+benchmark.Esun_wlT = rad.Esun_(IwlT);
+benchmark.Esky_wlT = rad.Esky_(IwlT);
 benchmark.Esun_rtmf = rad.Esun_(iwlfi);
 benchmark.Esky_rtmf = rad.Esky_(iwlfi);
 
@@ -242,14 +247,31 @@ benchmark.leaf_tran = leafopt.tran(1, IwlP)';
 benchmark.leaf_Mb = leafopt.Mb(:, :, 1);
 benchmark.leaf_Mf = leafopt.Mf(:, :, 1);
 
-benchmark.canopy_rsd = rad.rsd(IwlP);
-benchmark.canopy_rdd = rad.rdd(IwlP);
-benchmark.canopy_rdo = rad.rdo(IwlP);
-benchmark.canopy_rso = rad.rso(IwlP);
-benchmark.canopy_refl = rad.refl(IwlP);
+	benchmark.canopy_rsd = rad.rsd(IwlP);
+	benchmark.canopy_rdd = rad.rdd(IwlP);
+	benchmark.canopy_rdo = rad.rdo(IwlP);
+	benchmark.canopy_rso = rad.rso(IwlP);
+	benchmark.canopy_refl = rad.refl(IwlP);
+	benchmark.optical_Emin = rad.Emin_;
+	benchmark.optical_Eplu = rad.Eplu_;
+	benchmark.optical_Emins = rad.Emins_;
+	benchmark.optical_Emind = rad.Emind_;
+	benchmark.optical_Eplus = rad.Eplus_;
+	benchmark.optical_Eplud = rad.Eplud_;
+    benchmark.optical_Po = gap.Po(:);
+    benchmark.optical_Pso = gap.Pso(:);
+    benchmark.optical_piLocd = optical_diag.piLocd(:);
+    benchmark.optical_piLosd = optical_diag.piLosd(:);
+    benchmark.optical_piLocu = optical_diag.piLocu(:);
+    benchmark.optical_piLosu = optical_diag.piLosu(:);
+    benchmark.optical_piLocu_vbvf = optical_diag.piLocu_vbvf(:);
+    benchmark.optical_piLocu_w = optical_diag.piLocu_w(:);
+    benchmark.optical_piLod = optical_diag.piLod(:);
+    benchmark.optical_piLou = optical_diag.piLou(:);
 
 benchmark.fluor_LoF = rad.LoF_(:);
 benchmark.fluor_EoutF = rad.EoutF_(:);
+benchmark.fluor_PoutFrc = fluor_PoutFrc;
 benchmark.fluor_EoutFrc = fluor_EoutFrc(:);
 benchmark.fluor_Femleaves = rad.Femleaves_(:);
 benchmark.fluor_sigmaF = fluor_sigmaF(:);
@@ -283,6 +305,14 @@ benchmark.energy_sunlit_Ci = bcu.Ci(:);
 benchmark.energy_shaded_Ci = bch.Ci(:);
 benchmark.energy_sunlit_rcw = bcu.rcw(:);
 benchmark.energy_shaded_rcw = bch.rcw(:);
+benchmark.energy_sunlit_gs = (constants.rhoa ./ (constants.Mair * 1E-3)) ./ bcu.rcw(:);
+benchmark.energy_shaded_gs = (constants.rhoa ./ (constants.Mair * 1E-3)) ./ bch.rcw(:);
+benchmark.energy_Csu = reconstruct_boundary_co2(meteo.Ca, bcu.Ci(:), resistance, canopy.LAI, bcu.rcw(:));
+benchmark.energy_Csh = reconstruct_boundary_co2(meteo.Ca, bch.Ci(:), resistance, canopy.LAI, bch.rcw(:));
+benchmark.energy_ebu = reconstruct_boundary_vapor(meteo.ea, thermal.Tcu(:), resistance, canopy.LAI, bcu.rcw(:));
+benchmark.energy_ebh = reconstruct_boundary_vapor(meteo.ea, thermal.Tch(:), resistance, canopy.LAI, bch.rcw(:));
+benchmark.energy_Pnu_Cab = rad.Pnu_Cab(:);
+benchmark.energy_Pnh_Cab = rad.Pnh_Cab(:);
 
 benchmark.energy_Tcu = thermal.Tcu(:);
 benchmark.energy_Tch = thermal.Tch(:);
@@ -491,6 +521,54 @@ diag.Fplu = Fplu;
 end
 save(output_path, '-struct', 'benchmark');
 fprintf('Wrote benchmark fixture to %s\n', output_path);
+end
+
+
+function diag = rtmo_observation_diagnostics(spectral, rad, soil, canopy, gap)
+IwlP = spectral.IwlP(:);
+nl = canopy.nlayers;
+Po = gap.Po;
+Po_layers = Po(1:nl);
+rs = soil.refl(IwlP, :);
+
+piLosd = rs .* (rad.Emind_(end, IwlP)' * Po(end));
+piLod = rad.rdo(IwlP) .* rad.Esky_(IwlP);
+piLocd = piLod - piLosd;
+
+piLosu = rs .* (rad.Emins_(end, IwlP)' * Po(end) + rad.Esun_(IwlP) * gap.Pso(end));
+piLou = rad.rso(IwlP) .* rad.Esun_(IwlP);
+piLocu = piLou - piLosu;
+piLocu_vbvf = (sum(rad.vb(:, IwlP) .* Po_layers .* rad.Emins_(1:nl, IwlP) + ...
+                  rad.vf(:, IwlP) .* Po_layers .* rad.Eplus_(1:nl, IwlP), 1)') * (canopy.LAI / nl);
+piLocu_w = piLocu - piLocu_vbvf;
+
+diag = struct;
+diag.piLocd = piLocd;
+diag.piLosd = piLosd;
+diag.piLocu = piLocu;
+diag.piLosu = piLosu;
+diag.piLocu_vbvf = piLocu_vbvf;
+diag.piLocu_w = piLocu_w;
+diag.piLod = piLod;
+diag.piLou = piLou;
+end
+
+
+function Cc = reconstruct_boundary_co2(Ca, Ci, resistance, LAI, rcw)
+rac = (LAI + 1) * (resistance.raa + resistance.rawc);
+Cc = Ca - (Ca - Ci) .* rac ./ (rac + rcw);
+end
+
+
+function ec = reconstruct_boundary_vapor(ea, Tc, resistance, LAI, rcw)
+rac = (LAI + 1) * (resistance.raa + resistance.rawc);
+ei = satvap_hpa(Tc);
+ec = ea + (ei - ea) .* rac ./ (rac + rcw);
+end
+
+
+function es = satvap_hpa(T)
+es = 6.107 * 10 .^ (7.5 .* T ./ (237.3 + T));
 end
 
 
