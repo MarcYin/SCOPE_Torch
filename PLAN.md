@@ -26,11 +26,13 @@
 
 1. **The benchmark suite is widened, and the non-converged upstream case is now classified explicitly.**
    The MATLAB harness now scales to the full 100-case upstream Latin-hypercube set via `scripts/run_scope_benchmark_suite.py`, with per-case reports in `tests/data/benchmark_suite_reports/` and an aggregate summary in `tests/data/scope_benchmark_suite_summary.json`. The earlier `reflectance.refl` outlier was a benchmark-harness reconstruction bug and is now closed across the full 100-case sweep. The suite now treats upstream scenes that hit `ebal` max iterations as stress diagnostics instead of parity-gating cases. At the moment only case `042` falls into that bucket.
-2. **The raw energy-balance iterate diagnostics are still easy to misread.**
+2. **Time-series parity is now covered separately from the scene suite.**
+   `scripts/export_scope_timeseries_benchmarks.m` and `scripts/run_scope_timeseries_benchmark_suite.py` now exercise upstream SCOPE `simulation == 1` on the default 30-step verification series, writing per-step reports under `tests/data/timeseries_benchmark_reports/` and an aggregate summary in `tests/data/scope_timeseries_benchmark_summary.json`. The same non-converged-upstream policy applies there: step `026` is currently classified as a stress case because upstream MATLAB `ebal` hits `maxit`.
+3. **The raw energy-balance iterate diagnostics are still easy to misread.**
    End-of-iteration same-state parity is now negligible, but the phase-lagged `energy_balance.sunlit_A` and `energy_balance.shaded_A` fields in the raw comparison reports still look worse than the true leaf-kernel parity because they compare the final leaf solve against post-update boundary states. The harness now exports like-for-like iteration inputs to separate those cases, but that distinction is not yet documented widely in the repo.
-3. **GPU and batched consistency are not yet institutionalized.**
+4. **GPU and batched consistency are not yet institutionalized.**
    The earlier CPU/detach hot spots are gone from the implemented kernels, but there is still no regression suite proving CPU-vs-GPU or batched-vs-single equivalence for the coupled products.
-4. **Workflow parity is still narrow.**
+5. **Workflow parity is still narrow.**
    The model core is ahead of the workflow layer: options, metadata preservation, output assembly, and NetCDF/CSV parity are not finished.
 
 ## 2. Revised Target Architecture

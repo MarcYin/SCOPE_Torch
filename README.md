@@ -36,7 +36,7 @@ scope_grid_netcdf_inmemory_refactored.m  # Legacy MATLAB grid runner reference
 ## Development Roadmap
 See [PLAN.md](PLAN.md) for the physics summary, staged translation plan, and GPU-oriented design notes. Short version:
 1. **Core physics stack** → leaf optics, 4SAIL reflectance, layered fluorescence, thermal RT, leaf biochemistry, and energy balance are now implemented.
-2. **Current parity status** → the benchmark harness now scales to the full 100-case upstream Latin-hypercube suite. Converged-scene parity is locked there for reflectance, fluorescence, thermal RT, and the coupled energy products, while non-converged upstream `ebal` scenes such as case `042` are tracked separately as stress diagnostics.
+2. **Current parity status** → the benchmark harness now scales to the full 100-case upstream Latin-hypercube suite, and there is now a separate 30-step upstream time-series parity sweep. Converged scene and time-series steps are locked for reflectance, fluorescence, thermal RT, and the coupled energy products, while non-converged upstream `ebal` cases such as scene `042` and time-series step `026` are tracked separately as stress diagnostics.
 3. **Current highest priority** → make the grid path lazy, metadata-preserving, and able to write `xarray`/NetCDF outputs, then wire the benchmark policy into CI.
 4. **Regression infrastructure next** → add CI plus CPU-vs-GPU and batched-vs-single regression coverage around the widened MATLAB benchmark suite.
 
@@ -57,5 +57,7 @@ Current coverage is strongest for the implemented kernels:
 MATLAB parity tooling is also available:
 
 - `tests/test_scope_benchmark_parity.py` is the opt-in single-scene MATLAB parity gate.
+- `tests/test_scope_timeseries_benchmark_parity.py` is the opt-in MATLAB time-series parity gate.
 - `scripts/compare_scope_benchmark.py` compares one exported MATLAB fixture against the Python implementation.
 - `scripts/run_scope_benchmark_suite.py` now sweeps the full upstream Latin-hypercube case set by default and writes `tests/data/scope_benchmark_suite_summary.json`.
+- `scripts/run_scope_timeseries_benchmark_suite.py` sweeps the upstream 30-step verification time series and writes `tests/data/scope_timeseries_benchmark_summary.json`.
