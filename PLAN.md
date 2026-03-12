@@ -6,150 +6,154 @@
 
 | Area | Current implementation | Evidence |
 | --- | --- | --- |
-| Leaf optics | `scope_torch.spectral.fluspect` ports the PROSPECT/fluspect-style leaf optics core, including fluorescence matrices `Mb`/`Mf` and batched inputs via `LeafBioBatch`. | [src/scope_torch/spectral/fluspect.py](src/scope_torch/spectral/fluspect.py), [tests/spectral/test_fluspect.py](tests/spectral/test_fluspect.py) |
-| Canopy reflectance | `scope_torch.canopy.foursail` implements a batched 4SAIL canopy solver with LIDF support and soil coupling. | [src/scope_torch/canopy/foursail.py](src/scope_torch/canopy/foursail.py), [tests/canopy/test_foursail.py](tests/canopy/test_foursail.py) |
-| Grid batching | `ScopeGridDataModule` stacks `xarray.Dataset` inputs into chunked torch batches. | [src/scope_torch/data/grid.py](src/scope_torch/data/grid.py), [tests/test_grid_data_module.py](tests/test_grid_data_module.py) |
-| Minimal end-to-end runner | `ScopeGridRunner` already chains leaf optics and canopy reflectance over ROI/time batches. | [src/scope_torch/runners/grid.py](src/scope_torch/runners/grid.py), [tests/test_scope_grid_runner.py](tests/test_scope_grid_runner.py) |
+| Upstream asset loading | Real SCOPE optical assets, soil spectra, and SCOPE filename metadata can be loaded from the vendored upstream tree. | [src/scope_torch/spectral/loaders.py](src/scope_torch/spectral/loaders.py), [tests/spectral/test_loaders.py](tests/spectral/test_loaders.py) |
+| Leaf optics | `FluspectModel` ports the leaf optics core, including fluorescence matrices `Mb`/`Mf`, and now stays tensor-native instead of detaching to SciPy. | [src/scope_torch/spectral/fluspect.py](src/scope_torch/spectral/fluspect.py), [tests/spectral/test_fluspect.py](tests/spectral/test_fluspect.py) |
+| Canopy reflectance | `FourSAILModel` and `CanopyReflectanceModel` provide a SCOPE-facing reflectance stack with full reflectance outputs plus soil-library and BSM soil support. | [src/scope_torch/canopy/foursail.py](src/scope_torch/canopy/foursail.py), [src/scope_torch/canopy/reflectance.py](src/scope_torch/canopy/reflectance.py), [tests/canopy/test_foursail.py](tests/canopy/test_foursail.py), [tests/spectral/test_soil.py](tests/spectral/test_soil.py) |
+| Canopy fluorescence | The repo includes one-pass fluorescence, layered fluorescence transport, and a physiology-coupled layered fluorescence path. | [src/scope_torch/canopy/fluorescence.py](src/scope_torch/canopy/fluorescence.py), [tests/canopy/test_fluorescence.py](tests/canopy/test_fluorescence.py) |
+| Canopy thermal RT | The repo includes spectral thermal radiance and spectrally integrated thermal balance outputs with shared layered transport. | [src/scope_torch/canopy/thermal.py](src/scope_torch/canopy/thermal.py), [tests/canopy/test_thermal.py](tests/canopy/test_thermal.py) |
+| Leaf biochemistry | `LeafBiochemistryModel` covers C3/C4 assimilation, Ball-Berry closure, and fluorescence-yield outputs used by the canopy models. | [src/scope_torch/biochem/leaf.py](src/scope_torch/biochem/leaf.py), [tests/biochem/test_leaf.py](tests/biochem/test_leaf.py) |
+| Energy balance closure | `CanopyEnergyBalanceModel` iterates temperatures, boundary humidity/CO2, aerodynamic resistances, and coupled fluorescence/thermal outputs. | [src/scope_torch/energy/balance.py](src/scope_torch/energy/balance.py), [tests/energy/test_balance.py](tests/energy/test_balance.py) |
+| Grid execution | `ScopeGridRunner` now exposes reflectance, fluorescence, biochemical fluorescence, thermal RT, and coupled energy-balance fluorescence/thermal paths over ROI/time batches. | [src/scope_torch/runners/grid.py](src/scope_torch/runners/grid.py), [tests/test_scope_grid_runner.py](tests/test_scope_grid_runner.py) |
 
 ### Present but still prototype-level
 
 1. `prepare_scope_input.py` is still a host-specific script with hard-coded paths and no reusable library surface.
-2. The grid runner currently produces only leaf reflectance/transmittance plus two canopy reflectance products (`rsot`, `rdd`).
-3. The repository does not yet include the official MATLAB/SCOPE verification datasets, IO compatibility layers, or CI automation.
+2. `ScopeGridDataModule` still stacks and materializes tensors before chunking instead of streaming lazily from the dataset.
+3. `ScopeGridRunner` returns concatenated torch tensors, not metadata-preserving `xarray.Dataset` outputs.
+4. The repository still lacks official MATLAB/SCOPE verification cases, explicit product tolerances, and CI automation.
 
-### Not implemented yet
+### Main accuracy and scope gaps
 
-1. `biochemical.m` equivalent for FvCB photosynthesis and stomatal conductance.
-2. `ebal.m` equivalent for Newton-style energy balance closure.
-3. SCOPE thermal and fluorescence canopy transport modules (`RTMf`, `RTMt_planck/sb`, `RTMz`).
-4. Production output writers for SCOPE-compatible NetCDF/CSV/`.dat` products.
-5. Reusable loaders for upstream spectral parameter files, soil spectra, and scenario definitions.
+1. **Reference parity is still the main missing guardrail.**
+   The core model now covers reflectance, fluorescence, thermal RT, biochemistry, and energy balance, but those modules are mostly validated by local consistency and curated unit references rather than official SCOPE benchmark scenes.
+2. **The coupled energy-balance shortwave forcing still needs reference-backed locking.**
+   The current `CanopyEnergyBalanceModel` derives layer shortwave absorption from the in-repo layered transport implementation. That is coherent and tested, but it is not yet proven against upstream `RTMo`/`RTMz` outputs across benchmark cases.
+3. **GPU and batched consistency are not yet institutionalized.**
+   The earlier CPU/detach hot spots are gone from the implemented kernels, but there is still no regression suite proving CPU-vs-GPU or batched-vs-single equivalence for the coupled products.
+4. **Workflow parity is still narrow.**
+   The model core is ahead of the workflow layer: options, metadata preservation, output assembly, and NetCDF/CSV parity are not finished.
 
-## 2. Main Gaps and Technical Risks
-
-1. **Differentiability and GPU parity are not yet real guarantees.**
-   `FluspectModel._expint()` calls SciPy on CPU after detaching tensors, and `FourSAILModel._hotspot_terms()` converts tensors to Python scalars inside a loop. Both break the stated autograd/GPU direction and should be treated as short-term hardening work.
-2. **The canopy implementation is validated against PROSAIL/4SAIL, not full SCOPE canopy physics.**
-   The current solver is a strong VIS/NIR reflectance base, but it is not yet a replacement for SCOPE's `RTMo`/`RTMf`/`RTMt`/`RTMz` stack.
-3. **The grid path is functional but too narrow for the final product.**
-   `ScopeGridDataModule` materializes full tensors before chunking, and `ScopeGridRunner` does not preserve metadata, emit all products, or expose SCOPE option parity.
-4. **Verification coverage is still shallow.**
-   Existing tests prove local mathematical correctness for implemented kernels, but there is no official MATLAB regression suite, no tolerance budget per product, and no CI to enforce it.
-
-## 3. Revised Target Architecture
+## 2. Revised Target Architecture
 
 ### Core packages
 
 1. `scope_torch.spectral`
-   Leaf optics, spectral grids, upstream parameter loaders, soil spectra, and wavelength interpolation utilities.
+   Real upstream optical assets, leaf optics, wavelength grids, and soil optics.
 2. `scope_torch.canopy`
-   Batched VIS/NIR canopy reflectance plus SCOPE-specific fluorescence and thermal transport.
+   Reflectance, fluorescence, and thermal canopy transport on a shared geometry backbone.
 3. `scope_torch.biochem`
-   FvCB photosynthesis, stomatal conductance, and fluorescence-yield drivers.
+   Leaf physiology and fluorescence-yield drivers.
 4. `scope_torch.energy`
-   Aerodynamic resistance, soil heat treatment, and Newton energy balance closure.
+   Aerodynamic resistances, heat fluxes, soil heat treatment, and coupled energy balance closure.
 5. `scope_torch.runners`
-   High-level simulation entry points for single scenes and ROI/time grids.
+   Scene and ROI/time entry points over the tensor model core.
 6. `scope_torch.io`
-   Output assembly back to xarray/NetCDF plus SCOPE-compatible export tables where needed.
+   Output assembly back to `xarray` plus file exports.
 
 ### Data model principles
 
-1. Use batched tensors with spectral axes explicit, typically `[batch, wavelength]` for current kernels and `[batch, wavelength_out, wavelength_in]` for fluorescence transport matrices.
-2. Keep the geometry and simulation options explicit in typed dataclasses so MATLAB parity cases are reproducible.
-3. Preserve `xarray` metadata through the grid workflow so outputs can be reshaped back to `(y, x, time, wavelength)` without manual bookkeeping.
+1. Keep spectral, layer, and orientation axes explicit in tensors.
+2. Keep geometry, meteorology, canopy structure, soil, and solver options explicit in typed dataclasses.
+3. Preserve `xarray` coordinates and metadata through the grid workflow instead of requiring manual reshaping after the run.
 
-## 4. Improved Implementation Plan
+## 3. Updated Implementation Plan
 
-### Phase 0: Harden what already exists
+### Phase 0: Kernel hardening and real asset loading
 
-Goal: turn the current spectral + 4SAIL core into a stable base instead of building new modules on top of prototype assumptions.
+Status: substantially complete.
 
-1. Replace CPU-only and detached math paths in `fluspect` and `foursail` with tensor-native implementations.
-2. Add device, dtype, and gradient tests for the implemented kernels.
-3. Introduce loaders for spectral inputs (`OptiPar`, soil spectra, wavelength grids) from upstream SCOPE resources instead of synthetic test fixtures.
-4. Add a reproducible local test workflow and CI entry point.
+Completed:
+1. Removed the earlier CPU/detach hotspots from the implemented leaf and canopy kernels.
+2. Added real upstream optical asset loading for FLUSPECT and soil spectra.
+3. Added soil-library and BSM soil support.
 
-Exit criteria:
-1. Leaf and canopy kernels run on CPU and GPU without host round-trips.
-2. Existing tests pass in a fresh environment.
-3. The repository can load real optical parameters from upstream files.
+Remaining finish items:
+1. Add CPU-vs-GPU and batched-vs-single regression tests for the hardened kernels.
+2. Add a small set of mixed-dtype or mixed-device smoke tests if GPU support is expected in day-to-day use.
 
-### Phase 1: Finish the spectral reflectance stack
+### Phase 1: SCOPE-facing reflectance core
 
-Goal: move from "generic fluspect + 4SAIL" to a SCOPE-compatible reflectance core.
+Status: complete enough for downstream coupling.
 
-1. Wrap or refactor the current canopy solver behind a SCOPE-facing API that matches required `RTMo` inputs/outputs.
-2. Add soil optics generation/loading rather than requiring precomputed soil reflectance cubes.
-3. Expand canopy outputs beyond `rsot` and `rdd` to the full directional and hemispherical reflectance set already available from `FourSAILResult`.
-4. Bring in curated MATLAB/PROSAIL reference cases under `tests/data/`.
+Completed:
+1. Wrapped the current leaf optics and canopy reflectance stack behind a SCOPE-facing API.
+2. Exposed the full reflectance output set rather than only `rsot` and `rdd`.
+3. Added real soil loading and BSM soil generation paths.
 
-Exit criteria:
-1. Reflectance-only runs can be configured from real SCOPE inputs.
-2. Output naming and shapes are stable enough for downstream coupling.
-3. MATLAB/PROSAIL parity cases exist in-repo, not only synthetic tests.
+Remaining finish items:
+1. Lock reflectance outputs against curated SCOPE or PROSAIL benchmark scenes under `tests/data/`.
 
-### Phase 2: Add canopy fluorescence and thermal radiative transfer
+### Phase 2: Canopy fluorescence and thermal radiative transfer
 
-Goal: complete the radiative-transfer side before coupling in physiology and energy balance.
+Status: implemented, but not yet reference-locked.
 
-1. Implement fluorescence transport (`RTMf`) using the existing leaf-level `Mb`/`Mf` outputs as inputs.
-2. Implement thermal radiative transfer (`RTMt_planck` / `RTMt_sb`) and sun/shade separation outputs (`RTMz`) on the same geometry backbone.
-3. Standardize canopy outputs into one result object covering reflectance, SIF, thermal radiance, and intermediate flux terms needed by energy balance.
+Completed:
+1. Added one-pass and layered fluorescence transport.
+2. Added biochemical fluorescence coupling.
+3. Added spectral thermal radiance and integrated thermal balance outputs.
+4. Added coupled energy-balance fluorescence and thermal entry points.
 
-Exit criteria:
-1. The model can produce reflectance, fluorescence, and thermal products for prescribed leaf/soil temperatures and fluorescence yields.
-2. Shared geometry factors are reused across VIS/NIR, fluorescence, and thermal calculations.
+Remaining finish items:
+1. Benchmark fluorescence and thermal RT outputs against upstream SCOPE cases.
+2. Tighten any remaining post-processing or diagnostic-output differences discovered by those parity cases.
 
-### Phase 3: Port biochemistry and energy balance
+### Phase 3: Biochemistry and energy balance
 
-Goal: reproduce SCOPE's flux and temperature solution, not only its radiative outputs.
+Status: implemented prototype with good local regression coverage.
 
-1. Implement `biochemical.m` equivalents for FvCB assimilation and Ball-Berry or equivalent stomatal conductance.
-2. Implement `ebal.m` style Newton updates, damping, convergence checks, and flux bookkeeping.
-3. Couple the biochemistry and energy modules to the radiative-transfer outputs with clear lite/full modes.
+Completed:
+1. Added leaf biochemistry with Ball-Berry closure and fluorescence-yield outputs.
+2. Added aerodynamic resistances and heat-flux kernels.
+3. Added a tensor-native energy-balance closure loop.
+4. Wired closure outputs into coupled fluorescence and thermal workflows.
 
-Exit criteria:
-1. Net radiation, sensible heat, latent heat, and soil heat close within a defined tolerance.
-2. Flux and temperature solutions match MATLAB references for benchmark scenarios.
+Remaining finish items:
+1. Lock the shortwave forcing and convergence behavior against upstream `ebal.m` benchmark cases.
+2. Define explicit tolerances for net radiation, sensible heat, latent heat, soil heat, leaf temperatures, soil temperatures, and iteration counts.
 
-### Phase 4: Make the grid workflow production-ready
+### Phase 4: Production grid and IO workflow
 
-Goal: convert the current prototype batch runner into the real ROI/time execution path.
+Status: still the biggest functional gap outside parity.
 
+Tasks:
 1. Refactor `prepare_scope_input.py` into reusable library functions with configurable data sources and no machine-specific paths.
-2. Make `ScopeGridDataModule` lazy/chunk-aware so it does not materialize the full dataset before batching.
-3. Extend `ScopeGridRunner` to map the full option set, preserve metadata, and assemble outputs back into `xarray.Dataset`s.
-4. Add NetCDF writers and, if needed, tabular exports for parity with existing workflows.
+2. Make `ScopeGridDataModule` lazy and chunk-aware so it does not materialize the full dataset before batching.
+3. Extend `ScopeGridRunner` to preserve metadata and assemble results back into `xarray.Dataset`s.
+4. Add NetCDF writers and, if needed, tabular exports for existing downstream workflows.
 
 Exit criteria:
 1. A prepared ROI/time dataset can be simulated end-to-end and written back with coordinates and metadata intact.
-2. The grid pipeline supports chunked execution without rewriting model internals.
+2. Large ROI/time jobs can run in chunks without rewriting the model core.
 
 ### Phase 5: Lock parity and regression coverage
 
-Goal: prove equivalence and keep it stable.
+Status: now the top technical priority.
 
+Tasks:
 1. Vendor official or curated SCOPE verification cases into `tests/data/`.
-2. Add regression tests for single-case MATLAB parity, batched-vs-single consistency, and CPU-vs-GPU consistency.
-3. Define explicit tolerances by product class: reflectance, fluorescence, thermal radiance, fluxes, and convergence metrics.
-4. Wire the full suite into CI.
+2. Add single-scene MATLAB parity tests for reflectance, fluorescence, thermal radiance, and energy balance products.
+3. Add batched-vs-single and CPU-vs-GPU consistency tests.
+4. Define explicit tolerances by product class.
+5. Wire the full suite into CI.
 
 Exit criteria:
-1. Each implemented module has reference-backed regression tests.
+1. Each implemented physics module has reference-backed regression tests.
 2. End-to-end cases fail fast when parity drifts.
 
-## 5. Recommended Immediate Work Order
+## 4. Suggested Next Step
 
-This is the sequence that reduces the most downstream rework.
+The next step should be **reference-backed parity locking, starting with one coupled benchmark scene**.
 
-1. **Kernel hardening first.**
-   Remove the current CPU/detach hot spots in `fluspect` and `foursail` before adding more coupled physics.
-2. **Real input loaders second.**
-   Stop relying on synthetic `OptiPar` and soil spectra so later parity work is based on real SCOPE assets.
-3. **SCOPE-facing canopy API third.**
-   Stabilize the reflectance interface and output schema before building fluorescence, thermal, or grid products on top of it.
-4. **Biochemistry and energy after the RT stack is stable.**
-   These modules depend on the canopy outputs and are expensive to validate if the radiative interface keeps changing.
-5. **Grid and IO last, but not forgotten.**
-   The current runner is good enough for development, but production workflow work should wait until the core model contracts settle.
+Recommended sequence:
+
+1. Vendor one curated upstream SCOPE case into `tests/data/`.
+2. Build a parity harness that compares at least these outputs:
+   `rsot`, `LoF_`, `Lot_`, `Rnuc/Rnhc/Rnus/Rnhs`, `Tcu/Tch/Tsu/Tsh`, `H`, `lE`, and convergence count.
+3. Run that case through the current `CanopyEnergyBalanceModel` and fix any discrepancy before expanding to more cases.
+4. Only after the coupled-scene parity harness is stable, move on to grid metadata/output productionization.
+
+Why this should be next:
+
+1. The core physics stack is broad enough now that additional feature work will mostly create revalidation cost.
+2. The highest remaining technical risk is not missing modules; it is unproven parity for the coupled energy-balance path.
+3. Once the parity harness exists, the remaining grid/IO work becomes much safer because regressions will be visible immediately.
