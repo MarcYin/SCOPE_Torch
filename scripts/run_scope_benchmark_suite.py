@@ -48,6 +48,26 @@ def _worst_cases(per_case: dict[str, dict[str, dict[str, dict[str, float]]]]) ->
     return {"max_abs": worst_abs, "max_rel": worst_rel}
 
 
+def _filtered_worst_cases(
+    per_case: dict[str, dict[str, dict[str, dict[str, float]]]],
+    *,
+    exclude: set[str],
+) -> dict[str, dict[str, dict[str, Any]]]:
+    filtered: dict[str, dict[str, dict[str, dict[str, float]]]] = {}
+    for case_id, report in per_case.items():
+        case_report: dict[str, dict[str, dict[str, float]]] = {}
+        for section, metrics in report.items():
+            kept = {
+                name: values
+                for name, values in metrics.items()
+                if f"{section}.{name}" not in exclude
+            }
+            if kept:
+                case_report[section] = kept
+        filtered[case_id] = case_report
+    return _worst_cases(filtered)
+
+
 def _highlight(summary: dict[str, dict[str, dict[str, Any]]], keys: list[str]) -> dict[str, dict[str, Any]]:
     highlights: dict[str, dict[str, Any]] = {}
     for key in keys:
@@ -183,13 +203,24 @@ def main() -> int:
         device=args.device,
     )
     worst = _worst_cases(per_case)
+    parity_exclude = {
+        "energy_balance.sunlit_A",
+        "energy_balance.shaded_A",
+    }
+    parity_worst = _filtered_worst_cases(per_case, exclude=parity_exclude)
     highlights = _highlight(
-        worst,
+        parity_worst,
         keys=[
             "reflectance.refl",
+            "resistances_direct.raa",
+            "resistances_direct.raws",
             "fluorescence_transport.EoutFrc_",
             "fluorescence_transport.sigmaF",
             "thermal_transport.Eoutte_",
+            "leaf_iteration.sunlit_A",
+            "leaf_iteration.shaded_A",
+            "energy_iteration_input.sunlit_Cs",
+            "energy_iteration_input.shaded_Cs",
             "energy_balance.Rnuc_sw",
             "energy_balance.Rnhc_sw",
             "energy_balance.Rnuct",
@@ -202,8 +233,6 @@ def main() -> int:
             "energy_balance.Tsu",
             "energy_balance.Tsh",
             "energy_balance.canopyemis",
-            "energy_balance.sunlit_A",
-            "energy_balance.shaded_A",
             "energy_balance.sunlit_rcw",
             "energy_balance.shaded_rcw",
             "energy_balance.L",
@@ -215,6 +244,8 @@ def main() -> int:
         "reports_dir": _stable_summary_path(reports_dir, repo_root),
         "per_case": per_case,
         "worst_cases": worst,
+        "parity_exclude": sorted(parity_exclude),
+        "parity_worst_cases": parity_worst,
         "highlights": highlights,
     }
     summary_json.parent.mkdir(parents=True, exist_ok=True)
