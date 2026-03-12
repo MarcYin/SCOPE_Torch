@@ -6,6 +6,7 @@ from typing import Optional
 import torch
 
 from .foursail import FourSAILModel, FourSAILResult
+from .layered_rt import LayeredCanopyTransportModel
 from ..spectral.fluspect import FluspectModel, LeafBioBatch, LeafOptics
 from ..spectral.loaders import SoilSpectraLibrary, load_fluspect_resources, load_soil_spectra
 from ..spectral.soil import BSMSoilParameters, SoilBSMModel, SoilEmpiricalParams
@@ -62,6 +63,7 @@ class CanopyReflectanceModel:
     ) -> None:
         self.fluspect = fluspect
         self.sail = sail
+        self.layered_transport = LayeredCanopyTransportModel(sail)
         self.lidf = lidf
         self.default_hotspot = default_hotspot
         self.soil_spectra = soil_spectra
@@ -179,4 +181,92 @@ class CanopyReflectanceModel:
             psi,
             lidf=self.lidf if lidf is None else lidf,
         )
+        rtmo_core = self._rtmo_optical_reflectance(
+            leafopt=leafopt,
+            soil_refl=soil_refl,
+            lai=lai,
+            tts=tts,
+            tto=tto,
+            psi=psi,
+            hotspot=hotspot_value,
+            lidf=self.lidf if lidf is None else lidf,
+        )
+        sail_out.rdd = rtmo_core["rdd"]
+        sail_out.rsd = rtmo_core["rsd"]
+        sail_out.rdo = rtmo_core["rdo"]
+        sail_out.rso = rtmo_core["rso"]
+        sail_out.rsos = rtmo_core["rsos"]
+        sail_out.rsod = rtmo_core["rsod"]
+        # The layered RTMo terms already include the soil boundary condition, so
+        # the 4SAIL "total" aliases should track those values directly rather
+        # than retaining stale pre-override four-stream totals.
+        sail_out.rddt = rtmo_core["rdd"]
+        sail_out.rsdt = rtmo_core["rsd"]
+        sail_out.rdot = rtmo_core["rdo"]
+        sail_out.rsost = rtmo_core["rsos"]
+        sail_out.rsodt = rtmo_core["rsod"]
+        sail_out.rsot = rtmo_core["rso"]
         return CanopyReflectanceResult.from_components(leafopt, sail_out)
+
+    def _rtmo_optical_reflectance(
+        self,
+        *,
+        leafopt: LeafOptics,
+        soil_refl: torch.Tensor,
+        lai: torch.Tensor,
+        tts: torch.Tensor,
+        tto: torch.Tensor,
+        psi: torch.Tensor,
+        hotspot: torch.Tensor,
+        lidf: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        soil = self.sail._ensure_2d(soil_refl, target_shape=leafopt.refl.shape)
+        batch, nwl = leafopt.refl.shape
+        outputs = {"rdd": [], "rsd": [], "rdo": [], "rso": [], "rsos": [], "rsod": []}
+        for idx in range(batch):
+            nlayers = max(2, int(torch.ceil(torch.as_tensor(lai[idx], device=leafopt.refl.device, dtype=leafopt.refl.dtype) * 10.0).item()))
+            transfer = self.layered_transport.build(
+                leafopt.refl[idx : idx + 1],
+                leafopt.tran[idx : idx + 1],
+                soil[idx : idx + 1],
+                lai[idx : idx + 1],
+                tts[idx : idx + 1],
+                tto[idx : idx + 1],
+                psi[idx : idx + 1],
+                hotspot=hotspot[idx : idx + 1],
+                lidf=lidf[idx : idx + 1] if lidf.ndim == 2 else lidf,
+                nlayers=nlayers,
+            )
+            unit = torch.ones((1, nwl), device=leafopt.refl.device, dtype=leafopt.refl.dtype)
+            zeros = torch.zeros_like(unit)
+            direct = self.layered_transport.flux_profiles(transfer, unit, zeros)
+            diffuse = self.layered_transport.flux_profiles(transfer, zeros, unit)
+
+            Po = transfer.Po[:, : transfer.nlayers].unsqueeze(-1)
+            Pso = transfer.Pso[:, : transfer.nlayers].unsqueeze(-1)
+            iLAI = transfer.iLAI.view(1, 1, 1)
+
+            piLocd = iLAI * torch.sum(
+                (transfer.vb.unsqueeze(1) * diffuse.Emin_[:, : transfer.nlayers, :] + transfer.vf.unsqueeze(1) * diffuse.Eplu_[:, : transfer.nlayers, :]) * Po,
+                dim=1,
+            )
+            piLosd = soil[idx : idx + 1] * diffuse.Emin_[:, -1, :] * transfer.Po[:, -1].unsqueeze(-1)
+            piLocu_diffuse = iLAI * torch.sum(
+                transfer.vb.unsqueeze(1) * direct.Emin_[:, : transfer.nlayers, :] * Po
+                + transfer.vf.unsqueeze(1) * direct.Eplu_[:, : transfer.nlayers, :] * Po,
+                dim=1,
+            )
+            piLocu_hotspot = iLAI * torch.sum(transfer.w.unsqueeze(1) * Pso, dim=1)
+            piLosu_diffuse = soil[idx : idx + 1] * direct.Emin_[:, -1, :] * transfer.Po[:, -1].unsqueeze(-1)
+            piLosu_hotspot = soil[idx : idx + 1] * transfer.Pso[:, -1].unsqueeze(-1)
+            rsod = piLocu_diffuse + piLosu_diffuse
+            rsos = piLocu_hotspot + piLosu_hotspot
+
+            outputs["rdd"].append(transfer.R_dd[:, 0, :])
+            outputs["rsd"].append(transfer.R_sd[:, 0, :])
+            outputs["rdo"].append(piLocd + piLosd)
+            outputs["rso"].append(rsod + rsos)
+            outputs["rsos"].append(rsos)
+            outputs["rsod"].append(rsod)
+
+        return {name: torch.cat(chunks, dim=0) for name, chunks in outputs.items()}

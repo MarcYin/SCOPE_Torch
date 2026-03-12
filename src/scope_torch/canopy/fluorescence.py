@@ -9,7 +9,7 @@ from ..biochem import BiochemicalOptions, LeafBiochemistryInputs, LeafBiochemist
 from .foursail import FourSAILModel
 from .layered_rt import LayeredCanopyTransfer, LayeredCanopyTransportModel
 from .reflectance import CanopyReflectanceModel
-from ..spectral.fluspect import LeafBioBatch
+from ..spectral.fluspect import FluspectModel, LeafBioBatch, SpectralGrids
 from ..spectral.soil import SoilEmpiricalParams
 
 
@@ -54,6 +54,7 @@ class CanopyBiochemicalFluorescenceResult:
 class _LayeredFluorescenceDiagnostics:
     leaf_fluor_back: torch.Tensor
     leaf_fluor_forw: torch.Tensor
+    poutfrc: torch.Tensor
     MpluEsun: torch.Tensor
     MminEsun: torch.Tensor
     piLs: torch.Tensor
@@ -79,6 +80,19 @@ class CanopyFluorescenceModel:
         self.reflectance_model = reflectance_model
         self.layered_transport = LayeredCanopyTransportModel(reflectance_model.sail)
         self.leaf_biochemistry = LeafBiochemistryModel(
+            device=reflectance_model.fluspect.device,
+            dtype=reflectance_model.fluspect.dtype,
+        )
+        default_spectral = SpectralGrids.default(reflectance_model.fluspect.device, reflectance_model.fluspect.dtype)
+        self._rtmf_fluspect = FluspectModel(
+            SpectralGrids(
+                wlP=reflectance_model.fluspect.spectral.wlP,
+                wlF=default_spectral.wlF,
+                wlE=default_spectral.wlE,
+            ),
+            reflectance_model.fluspect.optipar,
+            ndub=reflectance_model.fluspect.ndub,
+            doublings_step=reflectance_model.fluspect.step,
             device=reflectance_model.fluspect.device,
             dtype=reflectance_model.fluspect.dtype,
         )
@@ -206,7 +220,7 @@ class CanopyFluorescenceModel:
 
         EoutF_ = upward_escape * EoutFrc_
         LoF_ = sigmaF * EoutFrc_ / torch.pi
-        sigmaF = (LoF_ * torch.pi) / EoutFrc_.clamp(min=1e-12)
+        sigmaF = self._scope_sigmaf(LoF_, EoutFrc_, wlF)
 
         F685, wl685 = self._peak_in_window(LoF_, wlF, max_wavelength=700.0)
         F740, wl740 = self._peak_in_window(LoF_, wlF, min_wavelength=700.0)
@@ -257,21 +271,31 @@ class CanopyFluorescenceModel:
         *,
         etau: Optional[torch.Tensor] = None,
         etah: Optional[torch.Tensor] = None,
+        Pnu_Cab: Optional[torch.Tensor] = None,
+        Pnh_Cab: Optional[torch.Tensor] = None,
         hotspot: Optional[torch.Tensor] = None,
         lidf: Optional[torch.Tensor] = None,
         nlayers: Optional[int] = None,
     ) -> CanopyFluorescenceResult:
         fluspect = self.reflectance_model.fluspect
-        leafopt = fluspect(leafbio)
+        leafopt = self._rtmf_fluspect(leafbio)
         if leafopt.Mb is None or leafopt.Mf is None:
             raise ValueError("Leaf fluorescence matrices are unavailable. Provide leafbio with fqe > 0.")
 
-        wlP = fluspect.spectral.wlP
-        wlE = fluspect.spectral.wlE
-        wlF = fluspect.spectral.wlF
+        wlP = self._rtmf_fluspect.spectral.wlP
+        wlE = self._rtmf_fluspect.spectral.wlE
+        wlF = self._rtmf_fluspect.spectral.wlF
         if wlE is None or wlF is None:
             raise ValueError("Spectral grids must define excitation and fluorescence wavelengths")
         nl = self._resolve_nlayers(nlayers, etau=etau, etah=etah)
+
+        source_wlE = fluspect.spectral.wlE
+        if source_wlE is None:
+            raise ValueError("Spectral grids must define excitation wavelengths")
+        Esun_source = self._prepare_spectrum(Esun_, leafopt.refl.shape[0], source_wlE.numel())
+        Esky_source = self._prepare_spectrum(Esky_, leafopt.refl.shape[0], source_wlE.numel())
+        Esun_working = self._sample_spectrum(Esun_source, source_wlE, wlE)
+        Esky_working = self._sample_spectrum(Esky_source, source_wlE, wlE)
 
         diagnostics = self._layered_diagnostics(
             leafopt=leafopt,
@@ -281,8 +305,8 @@ class CanopyFluorescenceModel:
             tts=tts,
             tto=tto,
             psi=psi,
-            Esun_=Esun_,
-            Esky_=Esky_,
+            Esun_=Esun_working,
+            Esky_=Esky_working,
             hotspot=hotspot,
             lidf=lidf,
             nlayers=nl,
@@ -303,30 +327,64 @@ class CanopyFluorescenceModel:
             hotspot=hotspot,
             lidf=lidf,
         )
-        gammasdf = self._interp1d(wlP, reflectance.gammasdf, wlF)
-        gammasdb = self._interp1d(wlP, reflectance.gammasdb, wlF)
-        gammaso = self._interp1d(wlP, reflectance.gammaso, wlF)
+        target_wlF = fluspect.spectral.wlF
+        if target_wlF is None:
+            raise ValueError("Spectral grids must define fluorescence wavelengths")
 
-        sigmaF = (diagnostics.LoF_ * torch.pi) / diagnostics.EoutFrc_.clamp(min=1e-12)
+        gammasdf = self._sample_spectrum(reflectance.gammasdf, wlP, target_wlF)
+        gammasdb = self._sample_spectrum(reflectance.gammasdb, wlP, target_wlF)
+        gammaso = self._sample_spectrum(reflectance.gammaso, wlP, target_wlF)
 
-        F685, wl685 = self._peak_in_window(diagnostics.LoF_, wlF, max_wavelength=700.0)
-        F740, wl740 = self._peak_in_window(diagnostics.LoF_, wlF, min_wavelength=700.0)
-        F684 = self._sample_nearest(diagnostics.LoF_, wlF, 684.0)
-        F761 = self._sample_nearest(diagnostics.LoF_, wlF, 761.0)
+        LoF_interp = self._matlab_spline_interp1(wlF, diagnostics.LoF_, target_wlF)
+        EoutF_interp = self._matlab_spline_interp1(wlF, diagnostics.EoutF_, target_wlF)
+        LoF_sunlit = self._matlab_spline_interp1(wlF, diagnostics.piLo1 / torch.pi, target_wlF)
+        LoF_shaded = self._matlab_spline_interp1(wlF, diagnostics.piLo2 / torch.pi, target_wlF)
+        LoF_scattered = self._matlab_spline_interp1(wlF, diagnostics.piLo3 / torch.pi, target_wlF)
+        LoF_soil = self._matlab_spline_interp1(wlF, diagnostics.piLo4 / torch.pi, target_wlF)
+        Femleaves_interp = self._matlab_spline_interp1(wlF, diagnostics.Femleaves_, target_wlF)
+
+        leafopt_source = fluspect(leafbio)
+        poutfrc_target = self._layered_source_poutfrc(
+            leafopt=leafopt_source,
+            leafbio=leafbio,
+            soil_refl=soil_refl,
+            lai=lai,
+            tts=tts,
+            tto=tto,
+            psi=psi,
+            Esun=Esun_source,
+            Esky=Esky_source,
+            hotspot=hotspot,
+            lidf=lidf,
+            nlayers=nl,
+            etau=etau,
+            etah=etah,
+            Pnu_Cab=Pnu_Cab,
+            Pnh_Cab=Pnh_Cab,
+            wlP=fluspect.spectral.wlP,
+            wlE=source_wlE,
+        )
+        EoutFrc_target = self._source_spectrum_from_poutfrc(poutfrc_target, wlP=fluspect.spectral.wlP, wlF=target_wlF)
+        sigmaF = self._scope_sigmaf(LoF_interp, EoutFrc_target, target_wlF)
+
+        F685, wl685 = self._peak_in_window(LoF_interp, target_wlF, max_wavelength=700.0)
+        F740, wl740 = self._peak_in_window(LoF_interp, target_wlF, min_wavelength=700.0)
+        F684 = self._sample_nearest(LoF_interp, target_wlF, 684.0)
+        F761 = self._sample_nearest(LoF_interp, target_wlF, 761.0)
         LoutF = 0.001 * torch.trapz(diagnostics.LoF_, wlF, dim=-1)
         EoutF = 0.001 * torch.trapz(diagnostics.EoutF_, wlF, dim=-1)
 
         return CanopyFluorescenceResult(
             leaf_fluor_back=diagnostics.leaf_fluor_back,
             leaf_fluor_forw=diagnostics.leaf_fluor_forw,
-            LoF_sunlit=diagnostics.piLo1 / torch.pi,
-            LoF_shaded=diagnostics.piLo2 / torch.pi,
-            LoF_scattered=diagnostics.piLo3 / torch.pi,
-            LoF_soil=diagnostics.piLo4 / torch.pi,
-            Femleaves_=diagnostics.Femleaves_,
-            EoutFrc_=diagnostics.EoutFrc_,
-            EoutF_=diagnostics.EoutF_,
-            LoF_=diagnostics.LoF_,
+            LoF_sunlit=LoF_sunlit,
+            LoF_shaded=LoF_shaded,
+            LoF_scattered=LoF_scattered,
+            LoF_soil=LoF_soil,
+            Femleaves_=Femleaves_interp,
+            EoutFrc_=EoutFrc_target,
+            EoutF_=EoutF_interp,
+            LoF_=LoF_interp,
             sigmaF=sigmaF,
             gammasdf=gammasdf,
             gammasdb=gammasdb,
@@ -495,7 +553,7 @@ class CanopyFluorescenceModel:
         LoF_ = piLtot / torch.pi
         EoutF_ = Fplu[:, 0, :]
         Femleaves_ = (Femmin + Femplu).sum(dim=1)
-        EoutFrc_ = self._layered_reabsorption_corrected_source(
+        poutfrc = self._layered_reabsorption_corrected_poutfrc(
             leafopt=leafopt,
             leafbio=leafbio,
             Esun=Esun,
@@ -506,11 +564,12 @@ class CanopyFluorescenceModel:
             etah=etah_orient,
             wlP=wlP,
             wlE=wlE,
-            wlF=wlF,
         )
+        EoutFrc_ = self._source_spectrum_from_poutfrc(poutfrc, wlP=wlP, wlF=wlF)
         return _LayeredFluorescenceDiagnostics(
             leaf_fluor_back=leaf_fluor_back,
             leaf_fluor_forw=leaf_fluor_forw,
+            poutfrc=poutfrc,
             MpluEsun=MpluEsun,
             MminEsun=MminEsun,
             piLs=piLs,
@@ -627,6 +686,8 @@ class CanopyFluorescenceModel:
             Esky_,
             etau=sunlit.eta,
             etah=shaded.eta,
+            Pnu_Cab=Pnu_Cab,
+            Pnh_Cab=Pnh_Cab,
             hotspot=hotspot,
             lidf=lidf,
             nlayers=nl,
@@ -673,9 +734,9 @@ class CanopyFluorescenceModel:
         return tensor
 
     def _interp1d(self, source_x: torch.Tensor, source_y: torch.Tensor, target_x: torch.Tensor) -> torch.Tensor:
-        source_x = source_x.to(self.reflectance_model.fluspect.device, self.reflectance_model.fluspect.dtype)
-        source_y = source_y.to(self.reflectance_model.fluspect.device, self.reflectance_model.fluspect.dtype)
-        target_x = target_x.to(self.reflectance_model.fluspect.device, self.reflectance_model.fluspect.dtype)
+        source_x = source_x.to(self.reflectance_model.fluspect.device, self.reflectance_model.fluspect.dtype).contiguous()
+        source_y = source_y.to(self.reflectance_model.fluspect.device, self.reflectance_model.fluspect.dtype).contiguous()
+        target_x = target_x.to(self.reflectance_model.fluspect.device, self.reflectance_model.fluspect.dtype).contiguous()
         idx = torch.bucketize(target_x, source_x) - 1
         idx = idx.clamp(0, source_x.numel() - 2)
         x0 = source_x[idx]
@@ -734,9 +795,9 @@ class CanopyFluorescenceModel:
         kchl_e = self._sample_spectrum(leafopt.kChlrel, wlP, wlE)
         epsc_e = (1.0 - rho_e - tau_e).clamp(min=0.0)
 
-        pnsun_cab = 1e6 * torch.trapz(self._e2phot(wlE, Esun * epsc_e * kchl_e), wlE, dim=-1)
+        pnsun_cab = 1e3 * torch.trapz(self._e2phot(wlE, Esun * epsc_e * kchl_e), wlE, dim=-1)
         E_layer = 0.5 * (total_Emin[:, :-1, :] + total_Emin[:, 1:, :] + total_Eplu[:, :-1, :] + total_Eplu[:, 1:, :])
-        pndif_cab = 1e6 * torch.trapz(
+        pndif_cab = 1e3 * torch.trapz(
             self._e2phot(wlE, E_layer * epsc_e.unsqueeze(1) * kchl_e.unsqueeze(1)),
             wlE,
             dim=-1,
@@ -760,12 +821,12 @@ class CanopyFluorescenceModel:
         tau_e = self._sample_spectrum(leafopt.tran, wlP, wlE)
         kchl_e = self._sample_spectrum(leafopt.kChlrel, wlP, wlE)
         epsc_e = (1.0 - rho_e - tau_e).clamp(min=0.0)
-        absorbed_cab = 0.001 * torch.trapz(self._e2phot(wlE, excitation * epsc_e * kchl_e), wlE, dim=-1)
+        absorbed_cab = 1e3 * torch.trapz(self._e2phot(wlE, excitation * epsc_e * kchl_e), wlE, dim=-1)
         fqe = self._expand_batch(leafbio.fqe, batch, device=excitation.device, dtype=excitation.dtype)
         poutfrc = fqe * lai * absorbed_cab
         return self._source_spectrum_from_poutfrc(poutfrc, wlP=wlP, wlF=wlF)
 
-    def _layered_reabsorption_corrected_source(
+    def _layered_reabsorption_corrected_poutfrc(
         self,
         *,
         leafopt,
@@ -778,7 +839,6 @@ class CanopyFluorescenceModel:
         etah: torch.Tensor,
         wlP: torch.Tensor,
         wlE: torch.Tensor,
-        wlF: torch.Tensor,
     ) -> torch.Tensor:
         batch = leafopt.refl.shape[0]
         rho_e = self._sample_spectrum(leafopt.refl, wlP, wlE)
@@ -786,9 +846,9 @@ class CanopyFluorescenceModel:
         kchl_e = self._sample_spectrum(leafopt.kChlrel, wlP, wlE)
         epsc_e = (1.0 - rho_e - tau_e).clamp(min=0.0)
 
-        pnsun_cab = 0.001 * torch.trapz(self._e2phot(wlE, Esun * epsc_e * kchl_e), wlE, dim=-1)
+        pnsun_cab = 1e3 * torch.trapz(self._e2phot(wlE, Esun * epsc_e * kchl_e), wlE, dim=-1)
         E_layer = 0.5 * (total_Emin[:, :-1, :] + total_Emin[:, 1:, :] + total_Eplu[:, :-1, :] + total_Eplu[:, 1:, :])
-        pndif_cab = 0.001 * torch.trapz(
+        pndif_cab = 1e3 * torch.trapz(
             self._e2phot(wlE, E_layer * epsc_e.unsqueeze(1) * kchl_e.unsqueeze(1)),
             wlE,
             dim=-1,
@@ -801,8 +861,111 @@ class CanopyFluorescenceModel:
 
         Ps = transport.Ps[:, : transport.nlayers]
         fqe = self._expand_batch(leafbio.fqe, batch, device=Esun.device, dtype=Esun.dtype)
-        poutfrc = fqe * transport.iLAI * torch.sum(Ps * sunlit_eta_abs + (1.0 - Ps) * shaded_eta_abs, dim=-1)
-        return self._source_spectrum_from_poutfrc(poutfrc, wlP=wlP, wlF=wlF)
+        return fqe * transport.iLAI * torch.sum(Ps * sunlit_eta_abs + (1.0 - Ps) * shaded_eta_abs, dim=-1)
+
+    def _layered_source_poutfrc(
+        self,
+        *,
+        leafopt,
+        leafbio: LeafBioBatch,
+        soil_refl: torch.Tensor,
+        lai: torch.Tensor,
+        tts: torch.Tensor,
+        tto: torch.Tensor,
+        psi: torch.Tensor,
+        Esun: torch.Tensor,
+        Esky: torch.Tensor,
+        hotspot: Optional[torch.Tensor],
+        lidf: Optional[torch.Tensor],
+        nlayers: int,
+        etau: Optional[torch.Tensor],
+        etah: Optional[torch.Tensor],
+        Pnu_Cab: Optional[torch.Tensor],
+        Pnh_Cab: Optional[torch.Tensor],
+        wlP: torch.Tensor,
+        wlE: torch.Tensor,
+    ) -> torch.Tensor:
+        hotspot_value = hotspot if hotspot is not None else torch.full_like(
+            torch.as_tensor(lai),
+            self.reflectance_model.default_hotspot,
+        )
+        rho_e = self._sample_spectrum(leafopt.refl, wlP, wlE)
+        tau_e = self._sample_spectrum(leafopt.tran, wlP, wlE)
+        soil_e = self._sample_spectrum(soil_refl, wlP, wlE)
+        transport = self.layered_transport.build(
+            rho_e,
+            tau_e,
+            soil_e,
+            lai,
+            tts,
+            tto,
+            psi,
+            hotspot=hotspot_value,
+            lidf=self.reflectance_model.lidf if lidf is None else lidf,
+            nlayers=nlayers,
+        )
+        etau_orient = self._prepare_etau(etau, transport)
+        etah_orient = self._prepare_etah(etah, transport)
+        if Pnu_Cab is not None and Pnh_Cab is not None:
+            return self._poutfrc_from_absorbed_cab_profiles(
+                leafbio=leafbio,
+                transport=transport,
+                etau=etau_orient,
+                etah=etah_orient,
+                Pnu_Cab=Pnu_Cab,
+                Pnh_Cab=Pnh_Cab,
+            )
+        direct = self.layered_transport.flux_profiles(transport, Esun, torch.zeros_like(Esky))
+        diffuse = self.layered_transport.flux_profiles(transport, torch.zeros_like(Esun), Esky)
+        total_Emin = direct.Emin_ + diffuse.Emin_
+        total_Eplu = direct.Eplu_ + diffuse.Eplu_
+        return self._layered_reabsorption_corrected_poutfrc(
+            leafopt=leafopt,
+            leafbio=leafbio,
+            Esun=Esun,
+            total_Emin=total_Emin,
+            total_Eplu=total_Eplu,
+            transport=transport,
+            etau=etau_orient,
+            etah=etah_orient,
+            wlP=wlP,
+            wlE=wlE,
+        )
+
+    def _poutfrc_from_absorbed_cab_profiles(
+        self,
+        *,
+        leafbio: LeafBioBatch,
+        transport: LayeredCanopyTransfer,
+        etau: torch.Tensor,
+        etah: torch.Tensor,
+        Pnu_Cab: torch.Tensor,
+        Pnh_Cab: torch.Tensor,
+    ) -> torch.Tensor:
+        batch = transport.Ps.shape[0]
+        device = transport.Ps.device
+        dtype = transport.Ps.dtype
+        eta_weights = transport.lidf_azimuth.unsqueeze(1)
+        Ps = transport.Ps[:, : transport.nlayers]
+        fqe = self._expand_batch(leafbio.fqe, batch, device=device, dtype=dtype)
+
+        pnu_tensor = torch.as_tensor(Pnu_Cab, device=device, dtype=dtype)
+        if pnu_tensor.ndim == 3 and pnu_tensor.shape[:2] == (batch, transport.nlayers):
+            sunlit_term = (etau * eta_weights * pnu_tensor).sum(dim=-1)
+        else:
+            pnu = self._prepare_layer_profile(Pnu_Cab, transport)
+            sunlit_eta = (etau * eta_weights).sum(dim=-1)
+            sunlit_term = sunlit_eta * pnu
+
+        pnh_tensor = torch.as_tensor(Pnh_Cab, device=device, dtype=dtype)
+        if pnh_tensor.ndim == 3 and pnh_tensor.shape[:2] == (batch, transport.nlayers):
+            shaded_term = (etah * eta_weights * pnh_tensor).sum(dim=-1)
+        else:
+            pnh = self._prepare_layer_profile(Pnh_Cab, transport)
+            shaded_eta = (etah * eta_weights).sum(dim=-1)
+            shaded_term = shaded_eta * pnh
+
+        return fqe * transport.iLAI * torch.sum(Ps * sunlit_term + (1.0 - Ps) * shaded_term, dim=-1)
 
     def _source_spectrum_from_poutfrc(self, poutfrc: torch.Tensor, *, wlP: torch.Tensor, wlF: torch.Tensor) -> torch.Tensor:
         batch = poutfrc.shape[0]
@@ -810,6 +973,19 @@ class CanopyFluorescenceModel:
         phi_em = self._sample_spectrum(phi, wlP, wlF)
         ep = self._ephoton(wlF).unsqueeze(0)
         return 1e-3 * ep * poutfrc.unsqueeze(-1) * phi_em
+
+    def _matlab_spline_interp1(self, source_x: torch.Tensor, source_y: torch.Tensor, target_x: torch.Tensor) -> torch.Tensor:
+        if source_x.numel() == target_x.numel() and torch.allclose(source_x, target_x):
+            return source_y
+        # Keep the public fluorescence path differentiable and device-native when
+        # callers provide custom excitation or emission grids.
+        return self._interp1d(source_x, source_y, target_x)
+
+    def _scope_sigmaf(self, LoF: torch.Tensor, EoutFrc: torch.Tensor, wlF: torch.Tensor) -> torch.Tensor:
+        raw = (LoF * torch.pi) / EoutFrc.clamp(min=1e-12)
+        coarse_wlF = wlF[::4]
+        coarse_raw = raw[..., ::4]
+        return self._sample_spectrum(coarse_raw, coarse_wlF, wlF)
 
     def _prepare_layer_profile(self, value: torch.Tensor | float, transfer: LayeredCanopyTransfer) -> torch.Tensor:
         batch = transfer.Ps.shape[0]

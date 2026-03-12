@@ -155,8 +155,9 @@ class CanopyThermalRadianceModel:
         U[:, -1, :] = Hs
         for layer in range(nl - 1, -1, -1):
             denom = (1.0 - transfer.rho_dd[:, layer, :] * transfer.R_dd[:, layer + 1, :]).clamp(min=1e-9)
-            Y[:, layer, :] = (transfer.rho_dd[:, layer, :] * U[:, layer + 1, :] + Hc[:, layer, :]) / denom
-            U[:, layer, :] = transfer.tau_dd[:, layer, :] * (transfer.R_dd[:, layer + 1, :] * Y[:, layer, :] + U[:, layer + 1, :]) + Hc[:, layer, :]
+            source = Hc[:, layer, :] * transfer.iLAI.unsqueeze(-1)
+            Y[:, layer, :] = (transfer.rho_dd[:, layer, :] * U[:, layer + 1, :] + source) / denom
+            U[:, layer, :] = transfer.tau_dd[:, layer, :] * (transfer.R_dd[:, layer + 1, :] * Y[:, layer, :] + U[:, layer + 1, :]) + source
         for layer in range(nl):
             Emin[:, layer + 1, :] = transfer.Xdd[:, layer, :] * Emin[:, layer, :] + Y[:, layer, :]
             Eplu[:, layer, :] = transfer.R_dd[:, layer, :] * Emin[:, layer, :] + U[:, layer, :]

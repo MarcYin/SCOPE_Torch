@@ -134,6 +134,8 @@ def test_energy_balance_fluorescence_matches_manual_eta_transport():
         Esky_e,
         etau=result.energy.sunlit.eta,
         etah=result.energy.shaded.eta,
+        Pnu_Cab=result.energy.Pnu_Cab,
+        Pnh_Cab=result.energy.Pnh_Cab,
         nlayers=4,
     )
 

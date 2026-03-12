@@ -264,7 +264,13 @@ class LeafBiochemistryModel:
         A = assimilation["A"]
         Ag = assimilation["Ag"]
         CO2_per_electron = assimilation["CO2_per_electron"]
-        gs = torch.clamp(1.6 * A * ppm2bar / (Cs - ci_solution["Ci"]).clamp(min=1e-12), min=0.0)
+        ci_delta = Cs - ci_solution["Ci"]
+        safe_ci_delta = torch.where(
+            ci_delta.abs() < 1e-12,
+            torch.where(ci_delta < 0.0, torch.full_like(ci_delta, -1e-12), torch.full_like(ci_delta, 1e-12)),
+            ci_delta,
+        )
+        gs = torch.clamp(1.6 * A * ppm2bar / safe_ci_delta, min=0.0)
         Ja = Ag / CO2_per_electron.clamp(min=1e-12)
         rcw = (self.rhoa / (self.Mair * 1e-3)) / gs.clamp(min=1e-12)
 
@@ -396,10 +402,9 @@ class LeafBiochemistryModel:
         if zero_intercept.all():
             return {"Ci": ci, "fcount": fcount}
 
-        lower = min_ci * Cs
-        upper = Cs
-        err_lower = self._ci_error(
-            lower,
+        a = Cs
+        err_a = self._ci_error(
+            a,
             Cs=Cs,
             RH=RH,
             min_ci=min_ci,
@@ -417,8 +422,9 @@ class LeafBiochemistryModel:
             effcon=effcon,
             Ke=Ke,
         )
-        err_upper = self._ci_error(
-            upper,
+        b = a + err_a
+        err_b = self._ci_error(
+            b,
             Cs=Cs,
             RH=RH,
             min_ci=min_ci,
@@ -436,11 +442,68 @@ class LeafBiochemistryModel:
             effcon=effcon,
             Ke=Ke,
         )
+        fcount = 2
+        ci = b
 
-        swap = (err_lower < 0.0) & (err_upper > 0.0)
-        lower, upper = torch.where(swap, upper, lower), torch.where(swap, lower, upper)
-        err_lower, err_upper = torch.where(swap, err_upper, err_lower), torch.where(swap, err_lower, err_upper)
-        bracketed = (~zero_intercept) & (err_lower >= 0.0) & (err_upper <= 0.0)
+        lower = torch.minimum(a, b)
+        upper = torch.maximum(a, b)
+        err_lower = torch.where(a <= b, err_a, err_b)
+        err_upper = torch.where(a <= b, err_b, err_a)
+        bracketed = (~zero_intercept) & ((err_lower >= 0.0) & (err_upper <= 0.0) | (err_lower <= 0.0) & (err_upper >= 0.0))
+
+        need_secant = (~zero_intercept) & ~bracketed
+        if need_secant.any():
+            denom = err_b - err_a
+            secant = torch.where(
+                denom.abs() > 1e-12,
+                b - err_b * (b - a) / denom,
+                b,
+            )
+            err_secant = self._ci_error(
+                secant,
+                Cs=Cs,
+                RH=RH,
+                min_ci=min_ci,
+                BallBerrySlope=BallBerrySlope,
+                BallBerry0=BallBerry0,
+                ppm2bar=ppm2bar,
+                canopy_type=canopy_type,
+                g_m=g_m,
+                Vs_C3=Vs_C3,
+                MM_consts=MM_consts,
+                Rd=Rd,
+                Vcmax=Vcmax,
+                Gamma_star=Gamma_star,
+                Je=Je,
+                effcon=effcon,
+                Ke=Ke,
+            )
+            fcount += 1
+
+            bracket_a_secant = need_secant & ((err_a >= 0.0) == (err_secant <= 0.0))
+            bracket_b_secant = need_secant & ~bracket_a_secant & ((err_b >= 0.0) == (err_secant <= 0.0))
+
+            lower_a = torch.minimum(a, secant)
+            upper_a = torch.maximum(a, secant)
+            err_lower_a = torch.where(a <= secant, err_a, err_secant)
+            err_upper_a = torch.where(a <= secant, err_secant, err_a)
+
+            lower_b = torch.minimum(b, secant)
+            upper_b = torch.maximum(b, secant)
+            err_lower_b = torch.where(b <= secant, err_b, err_secant)
+            err_upper_b = torch.where(b <= secant, err_secant, err_b)
+
+            lower = torch.where(bracket_a_secant, lower_a, lower)
+            upper = torch.where(bracket_a_secant, upper_a, upper)
+            err_lower = torch.where(bracket_a_secant, err_lower_a, err_lower)
+            err_upper = torch.where(bracket_a_secant, err_upper_a, err_upper)
+
+            lower = torch.where(bracket_b_secant, lower_b, lower)
+            upper = torch.where(bracket_b_secant, upper_b, upper)
+            err_lower = torch.where(bracket_b_secant, err_lower_b, err_lower)
+            err_upper = torch.where(bracket_b_secant, err_upper_b, err_upper)
+
+            bracketed = bracketed | bracket_a_secant | bracket_b_secant
 
         for _ in range(max_iter):
             active = bracketed & ((upper - lower).abs() > tol)

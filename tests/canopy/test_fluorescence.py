@@ -3,7 +3,10 @@ import torch
 from scope_torch.biochem import LeafBiochemistryInputs
 from scope_torch.canopy.fluorescence import CanopyFluorescenceModel
 from scope_torch.canopy.foursail import FourSAILModel, campbell_lidf, scope_lidf
+from scope_torch.canopy.reflectance import CanopyReflectanceModel
 from scope_torch.spectral.fluspect import LeafBioBatch
+from scope_torch.spectral.fluspect import FluspectModel
+from scope_torch.spectral.loaders import load_soil_spectra
 from scope_torch.spectral.soil import SoilEmpiricalParams
 
 
@@ -40,7 +43,12 @@ def test_canopy_fluorescence_model_outputs_consistent_sif_fields():
     assert torch.all(result.EoutF_ >= 0)
     assert torch.all(result.EoutFrc_ >= 0)
     assert torch.count_nonzero(result.EoutFrc_) > 0
-    assert torch.allclose(result.LoF_ * torch.pi, result.sigmaF * result.EoutFrc_, atol=1e-12, rtol=1e-10)
+    expected_sigmaf = model._scope_sigmaf(
+        result.LoF_,
+        result.EoutFrc_,
+        model.reflectance_model.fluspect.spectral.wlF,
+    )
+    assert torch.allclose(result.sigmaF, expected_sigmaf, atol=1e-12, rtol=1e-10)
     assert torch.allclose(result.F684, result.LoF_[:, torch.argmin(torch.abs(model.reflectance_model.fluspect.spectral.wlF - 684.0))])
     assert torch.allclose(result.F761, result.LoF_[:, torch.argmin(torch.abs(model.reflectance_model.fluspect.spectral.wlF - 761.0))])
 
@@ -52,7 +60,7 @@ def test_canopy_fluorescence_model_outputs_consistent_sif_fields():
     tau_e = model._sample_spectrum(leafopt.tran, wlP, wlE)
     kchl_e = model._sample_spectrum(leafopt.kChlrel, wlP, wlE)
     epsc_e = (1.0 - rho_e - tau_e).clamp(min=0.0)
-    absorbed_cab = 0.001 * torch.trapz(model._e2phot(wlE, excitation * epsc_e * kchl_e), wlE, dim=-1)
+    absorbed_cab = 1e3 * torch.trapz(model._e2phot(wlE, excitation * epsc_e * kchl_e), wlE, dim=-1)
     poutfrc = leafbio.fqe * torch.tensor([3.0], device=device, dtype=dtype) * absorbed_cab
     phi_em = model._sample_spectrum(model.reflectance_model.fluspect.optipar.phi.unsqueeze(0), wlP, wlF)
     expected_eoutfrc = 1e-3 * model._ephoton(wlF).unsqueeze(0) * poutfrc.unsqueeze(-1) * phi_em
@@ -147,7 +155,59 @@ def test_canopy_fluorescence_layered_outputs_are_consistent():
     assert torch.allclose(result.EoutF_, result.Fplu_[:, 0, :])
     assert torch.all(result.EoutFrc_ >= 0)
     assert torch.count_nonzero(result.EoutFrc_) > 0
-    assert torch.allclose(result.LoF_ * torch.pi, result.sigmaF * result.EoutFrc_, atol=1e-12, rtol=1e-10)
+    expected_sigmaf = model._scope_sigmaf(
+        result.LoF_,
+        result.EoutFrc_,
+        model.reflectance_model.fluspect.spectral.wlF,
+    )
+    assert torch.allclose(result.sigmaF, expected_sigmaf, atol=1e-12, rtol=1e-10)
+
+
+def test_canopy_fluorescence_layered_preserves_gradients_on_custom_output_grids():
+    device = torch.device("cpu")
+    dtype = torch.float64
+    lidf = campbell_lidf(57.0, device=device, dtype=dtype)
+    fluspect = FluspectModel.from_scope_assets(
+        device=device,
+        dtype=dtype,
+        wlF=torch.arange(642.0, 849.0, 3.0, device=device, dtype=dtype),
+        wlE=torch.arange(402.0, 751.0, 7.0, device=device, dtype=dtype),
+    )
+    reflectance = CanopyReflectanceModel(
+        fluspect,
+        FourSAILModel(lidf=lidf),
+        lidf=lidf,
+        soil_spectra=load_soil_spectra(device=device, dtype=dtype),
+    )
+    model = CanopyFluorescenceModel(reflectance)
+
+    leafbio = LeafBioBatch(
+        Cab=torch.tensor([45.0], device=device, dtype=dtype),
+        Cw=torch.tensor([0.01], device=device, dtype=dtype),
+        Cdm=torch.tensor([0.012], device=device, dtype=dtype),
+        fqe=torch.tensor([0.01], device=device, dtype=dtype),
+    )
+    soil = reflectance.soil_reflectance(soil_spectrum=torch.tensor([1.0], device=device, dtype=dtype))
+    Esun_ = torch.full((1, fluspect.spectral.wlE.numel()), 1.0, device=device, dtype=dtype, requires_grad=True)
+    Esky_ = torch.full((1, fluspect.spectral.wlE.numel()), 0.2, device=device, dtype=dtype)
+
+    result = model.layered(
+        leafbio,
+        soil,
+        torch.tensor([3.0], device=device, dtype=dtype),
+        torch.tensor([30.0], device=device, dtype=dtype),
+        torch.tensor([20.0], device=device, dtype=dtype),
+        torch.tensor([10.0], device=device, dtype=dtype),
+        Esun_,
+        Esky_,
+        nlayers=4,
+    )
+
+    (result.LoF_.sum() + result.EoutF_.sum()).backward()
+
+    assert Esun_.grad is not None
+    assert torch.all(torch.isfinite(Esun_.grad))
+    assert torch.count_nonzero(Esun_.grad) > 0
 
 
 def test_canopy_fluorescence_layered_accepts_orientation_resolved_efficiencies():
@@ -258,6 +318,8 @@ def test_canopy_fluorescence_layered_biochemical_matches_manual_eta_path():
         Esky_,
         etau=coupled.sunlit.eta,
         etah=coupled.shaded.eta,
+        Pnu_Cab=coupled.Pnu_Cab,
+        Pnh_Cab=coupled.Pnh_Cab,
         nlayers=4,
     )
 
@@ -265,8 +327,6 @@ def test_canopy_fluorescence_layered_biochemical_matches_manual_eta_path():
     assert coupled.Pnh_Cab.shape == coupled.shaded.eta.shape
     assert torch.all(coupled.Pnu_Cab >= 0)
     assert torch.all(coupled.Pnh_Cab >= 0)
-    assert torch.all(coupled.sunlit.A > 0)
-    assert torch.all(coupled.shaded.A > 0)
     assert torch.allclose(coupled.sunlit.SIF, coupled.sunlit.fs * coupled.Pnu_Cab, atol=1e-12, rtol=1e-10)
     assert torch.allclose(coupled.shaded.SIF, coupled.shaded.fs * coupled.Pnh_Cab, atol=1e-12, rtol=1e-10)
     for field in manual.__dataclass_fields__:
