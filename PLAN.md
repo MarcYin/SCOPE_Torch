@@ -20,14 +20,14 @@
 1. `prepare_scope_input.py` is still a host-specific script with hard-coded paths and no reusable library surface.
 2. `ScopeGridDataModule` still stacks and materializes tensors before chunking instead of streaming lazily from the dataset.
 3. `ScopeGridRunner` returns concatenated torch tensors, not metadata-preserving `xarray.Dataset` outputs.
-4. The repository still lacks official MATLAB/SCOPE verification cases, explicit product tolerances, and CI automation.
+4. The repository still lacks CI automation and institutionalized GPU/batched regression checks, even though local MATLAB parity fixtures now exist.
 
 ### Main accuracy and scope gaps
 
-1. **Reference parity is still the main missing guardrail.**
-   The core model now covers reflectance, fluorescence, thermal RT, biochemistry, and energy balance, but those modules are mostly validated by local consistency and curated unit references rather than official SCOPE benchmark scenes.
-2. **The coupled energy-balance shortwave forcing still needs reference-backed locking.**
-   The current `CanopyEnergyBalanceModel` derives layer shortwave absorption from the in-repo layered transport implementation. That is coherent and tested, but it is not yet proven against upstream `RTMo`/`RTMz` outputs across benchmark cases.
+1. **The benchmark suite is widened, and the non-converged upstream case is now classified explicitly.**
+   The MATLAB harness now scales to the full 100-case upstream Latin-hypercube set via `scripts/run_scope_benchmark_suite.py`, with per-case reports in `tests/data/benchmark_suite_reports/` and an aggregate summary in `tests/data/scope_benchmark_suite_summary.json`. The earlier `reflectance.refl` outlier was a benchmark-harness reconstruction bug and is now closed across the full 100-case sweep. The suite now treats upstream scenes that hit `ebal` max iterations as stress diagnostics instead of parity-gating cases. At the moment only case `042` falls into that bucket.
+2. **The raw energy-balance iterate diagnostics are still easy to misread.**
+   End-of-iteration same-state parity is now negligible, but the phase-lagged `energy_balance.sunlit_A` and `energy_balance.shaded_A` fields in the raw comparison reports still look worse than the true leaf-kernel parity because they compare the final leaf solve against post-update boundary states. The harness now exports like-for-like iteration inputs to separate those cases, but that distinction is not yet documented widely in the repo.
 3. **GPU and batched consistency are not yet institutionalized.**
    The earlier CPU/detach hot spots are gone from the implemented kernels, but there is still no regression suite proving CPU-vs-GPU or batched-vs-single equivalence for the coupled products.
 4. **Workflow parity is still narrow.**
@@ -73,43 +73,46 @@ Remaining finish items:
 
 ### Phase 1: SCOPE-facing reflectance core
 
-Status: complete enough for downstream coupling.
+Status: benchmark-locked for the current optical path.
 
 Completed:
 1. Wrapped the current leaf optics and canopy reflectance stack behind a SCOPE-facing API.
 2. Exposed the full reflectance output set rather than only `rsot` and `rdd`.
 3. Added real soil loading and BSM soil generation paths.
+4. Locked reflectance outputs against the current MATLAB benchmark suite to negligible relative error.
 
 Remaining finish items:
-1. Lock reflectance outputs against curated SCOPE or PROSAIL benchmark scenes under `tests/data/`.
+1. Keep the non-converged-scene classification explicit in the benchmark exports and summary reports.
 
 ### Phase 2: Canopy fluorescence and thermal radiative transfer
 
-Status: implemented, but not yet reference-locked.
+Status: implemented and benchmark-locked for the current product set.
 
 Completed:
 1. Added one-pass and layered fluorescence transport.
 2. Added biochemical fluorescence coupling.
 3. Added spectral thermal radiance and integrated thermal balance outputs.
 4. Added coupled energy-balance fluorescence and thermal entry points.
+5. Locked fluorescence and thermal transport outputs against the current MATLAB benchmark suite.
 
 Remaining finish items:
-1. Benchmark fluorescence and thermal RT outputs against upstream SCOPE cases.
-2. Tighten any remaining post-processing or diagnostic-output differences discovered by those parity cases.
+1. Add any extra exported RT diagnostics needed to isolate future widened-suite outliers faster.
 
 ### Phase 3: Biochemistry and energy balance
 
-Status: implemented prototype with good local regression coverage.
+Status: implemented and benchmark-locked for same-state parity.
 
 Completed:
 1. Added leaf biochemistry with Ball-Berry closure and fluorescence-yield outputs.
 2. Added aerodynamic resistances and heat-flux kernels.
 3. Added a tensor-native energy-balance closure loop.
 4. Wired closure outputs into coupled fluorescence and thermal workflows.
+5. Added MATLAB benchmark export of the actual final biochemical-call inputs and the exact `L` used by `resistances.m`, which closes the earlier comparison artifacts.
+6. Locked current same-state energy-balance parity across the original curated 10-case benchmark suite to below `1e-3` relative error for the tracked parity metrics.
 
 Remaining finish items:
-1. Lock the shortwave forcing and convergence behavior against upstream `ebal.m` benchmark cases.
-2. Define explicit tolerances for net radiation, sensible heat, latent heat, soil heat, leaf temperatures, soil temperatures, and iteration counts.
+1. Document the distinction between same-state parity and phase-lagged iterate diagnostics in the benchmark reports.
+2. Keep explicit tolerances versioned in tests and CI rather than only in local reports.
 
 ### Phase 4: Production grid and IO workflow
 
@@ -127,33 +130,33 @@ Exit criteria:
 
 ### Phase 5: Lock parity and regression coverage
 
-Status: now the top technical priority.
+Status: partially complete.
 
 Tasks:
-1. Vendor official or curated SCOPE verification cases into `tests/data/`.
-2. Add single-scene MATLAB parity tests for reflectance, fluorescence, thermal radiance, and energy balance products.
+1. Keep the widened 100-case MATLAB suite and the single-scene pytest parity gate in sync with the benchmark exports.
+2. Turn the widened-suite summary into versioned tolerances rather than relying only on local JSON reports.
 3. Add batched-vs-single and CPU-vs-GPU consistency tests.
-4. Define explicit tolerances by product class.
-5. Wire the full suite into CI.
+4. Wire the full suite into CI, possibly with a fast sampled subset plus an opt-in full sweep.
 
 Exit criteria:
-1. Each implemented physics module has reference-backed regression tests.
-2. End-to-end cases fail fast when parity drifts.
+1. Each implemented physics module has reference-backed regression tests in automated CI.
+2. The widened MATLAB suite has explicit pass/fail policy for converged and non-converged upstream scenes.
+3. End-to-end cases fail fast when parity drifts on CPU or GPU.
 
 ## 4. Suggested Next Step
 
-The next step should be **reference-backed parity locking, starting with one coupled benchmark scene**.
+The next step should be **workflow productionization plus automated regression coverage**.
 
 Recommended sequence:
 
-1. Vendor one curated upstream SCOPE case into `tests/data/`.
-2. Build a parity harness that compares at least these outputs:
-   `rsot`, `LoF_`, `Lot_`, `Rnuc/Rnhc/Rnus/Rnhs`, `Tcu/Tch/Tsu/Tsh`, `H`, `lE`, and convergence count.
-3. Run that case through the current `CanopyEnergyBalanceModel` and fix any discrepancy before expanding to more cases.
-4. Only after the coupled-scene parity harness is stable, move on to grid metadata/output productionization.
+1. Refactor `prepare_scope_input.py` into reusable library code with configurable inputs and no machine-specific paths.
+2. Make `ScopeGridDataModule` lazy so large ROI/time datasets do not materialize into one tensor map up front.
+3. Add metadata-preserving `xarray.Dataset` assembly to `ScopeGridRunner`.
+4. Add CI that runs the standard unit suite plus the MATLAB parity gates where available.
+5. Add batched-vs-single and CPU-vs-GPU regression tests for the coupled products.
 
 Why this should be next:
 
-1. The core physics stack is broad enough now that additional feature work will mostly create revalidation cost.
-2. The highest remaining technical risk is not missing modules; it is unproven parity for the coupled energy-balance path.
-3. Once the parity harness exists, the remaining grid/IO work becomes much safer because regressions will be visible immediately.
+1. The widened suite showed the remaining parity work is now narrow and concrete, not broad missing physics.
+2. With reflectance fixed and the non-converged-scene policy explicit, the main remaining work is workflow robustness, not unresolved parity semantics.
+3. The benchmark harness now exists at the full-scene scale, so productization work can proceed safely as long as the parity checks stay attached to it.

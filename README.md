@@ -36,9 +36,9 @@ scope_grid_netcdf_inmemory_refactored.m  # Legacy MATLAB grid runner reference
 ## Development Roadmap
 See [PLAN.md](PLAN.md) for the physics summary, staged translation plan, and GPU-oriented design notes. Short version:
 1. **Core physics stack** → leaf optics, 4SAIL reflectance, layered fluorescence, thermal RT, leaf biochemistry, and energy balance are now implemented.
-2. **Current highest priority** → lock coupled-scene parity against upstream SCOPE benchmark cases and define explicit tolerances.
-3. **Workflow work after parity** → make the grid path lazy, metadata-preserving, and able to write `xarray`/NetCDF outputs.
-4. **Stability work last** → add CI plus CPU-vs-GPU and batched-vs-single regression coverage.
+2. **Current parity status** → the benchmark harness now scales to the full 100-case upstream Latin-hypercube suite. Converged-scene parity is locked there for reflectance, fluorescence, thermal RT, and the coupled energy products, while non-converged upstream `ebal` scenes such as case `042` are tracked separately as stress diagnostics.
+3. **Current highest priority** → make the grid path lazy, metadata-preserving, and able to write `xarray`/NetCDF outputs, then wire the benchmark policy into CI.
+4. **Regression infrastructure next** → add CI plus CPU-vs-GPU and batched-vs-single regression coverage around the widened MATLAB benchmark suite.
 
 ## Testing
 After installing the project and dev dependencies, run the unit tests with
@@ -53,3 +53,9 @@ Current coverage is strongest for the implemented kernels:
 - `tests/canopy/test_foursail.py` checks the canopy solver against `prosail`'s 4SAIL implementation.
 - `tests/canopy/test_fluorescence.py`, `tests/canopy/test_thermal.py`, and `tests/energy/test_balance.py` cover layered fluorescence, thermal RT, and coupled energy balance.
 - `tests/test_scope_grid_runner.py` verifies that the ROI/time runner matches manual single-scene execution paths for reflectance, fluorescence, thermal, and energy-balance workflows.
+
+MATLAB parity tooling is also available:
+
+- `tests/test_scope_benchmark_parity.py` is the opt-in single-scene MATLAB parity gate.
+- `scripts/compare_scope_benchmark.py` compares one exported MATLAB fixture against the Python implementation.
+- `scripts/run_scope_benchmark_suite.py` now sweeps the full upstream Latin-hypercube case set by default and writes `tests/data/scope_benchmark_suite_summary.json`.
