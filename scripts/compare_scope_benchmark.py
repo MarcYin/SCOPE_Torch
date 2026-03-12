@@ -66,6 +66,13 @@ def _batch_profile(value: Any, *, device: torch.device, dtype: torch.dtype) -> t
     return _vector(value, device=device, dtype=dtype).unsqueeze(0)
 
 
+def _optional_tensor(value: Any, *, device: torch.device, dtype: torch.dtype) -> torch.Tensor | None:
+    array = np.asarray(value)
+    if array.size == 0:
+        return None
+    return _tensor(value, device=device, dtype=dtype)
+
+
 def _metrics(predicted: torch.Tensor, reference: torch.Tensor) -> dict[str, float]:
     pred = predicted.detach().cpu().to(torch.float64).reshape(-1)
     ref = reference.detach().cpu().to(torch.float64).reshape(-1)
@@ -422,11 +429,25 @@ def main() -> int:
         h=torch.tensor([_scalar(benchmark["canopy_hc"])], device=device, dtype=dtype),
         kV=torch.tensor([_scalar(benchmark["canopy_kV"])], device=device, dtype=dtype),
     )
+    soil_heat_method = int(round(_scalar(benchmark["soil_heat_method"]))) if "soil_heat_method" in benchmark else 2
+    soil_tsold = (
+        _optional_tensor(benchmark["soil_Tsold_initial"], device=device, dtype=dtype)
+        if "soil_Tsold_initial" in benchmark
+        else None
+    )
+    soil_dt_seconds = None
+    if "energy_dt_seconds" in benchmark:
+        dt_value = _scalar(benchmark["energy_dt_seconds"])
+        if np.isfinite(dt_value):
+            soil_dt_seconds = torch.tensor([dt_value], device=device, dtype=dtype)
+
     soil_state = EnergyBalanceSoil(
         rss=torch.tensor([_scalar(benchmark["soil_rss"])], device=device, dtype=dtype),
         rbs=torch.tensor([_scalar(benchmark["soil_rbs"])], device=device, dtype=dtype),
         thermal_optics=thermal_optics,
-        soil_heat_method=2,
+        soil_heat_method=soil_heat_method,
+        Tsold=soil_tsold,
+        dt_seconds=soil_dt_seconds,
     )
     energy_options = EnergyBalanceOptions(max_iter=100, max_energy_error=1.0, monin_obukhov=True)
     energy = energy_model.solve(
