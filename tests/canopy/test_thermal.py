@@ -140,3 +140,111 @@ def test_canopy_thermal_radiance_accepts_orientation_resolved_leaf_temperatures(
     assert torch.allclose(oriented.Lot_, layer_mean.Lot_, atol=1e-12, rtol=1e-10)
     assert torch.allclose(oriented.Eoutte_, layer_mean.Eoutte_, atol=1e-12, rtol=1e-10)
     assert torch.allclose(oriented.LotBB_, layer_mean.LotBB_, atol=1e-12, rtol=1e-10)
+
+
+def test_canopy_thermal_integrated_balance_terms_are_consistent():
+    device = torch.device("cpu")
+    dtype = torch.float64
+    lidf = campbell_lidf(57.0, device=device, dtype=dtype)
+    model = CanopyThermalRadianceModel.from_scope_assets(lidf=lidf, device=device, dtype=dtype)
+    optics = ThermalOptics(rho_thermal=0.01, tau_thermal=0.01, rs_thermal=0.06)
+
+    result = model.integrated_balance(
+        torch.tensor([3.0], device=device, dtype=dtype),
+        torch.tensor([30.0], device=device, dtype=dtype),
+        torch.tensor([20.0], device=device, dtype=dtype),
+        torch.tensor([10.0], device=device, dtype=dtype),
+        torch.full((1, 4), 25.0, device=device, dtype=dtype),
+        torch.full((1, 4), 23.0, device=device, dtype=dtype),
+        torch.tensor([27.0], device=device, dtype=dtype),
+        torch.tensor([21.0], device=device, dtype=dtype),
+        thermal_optics=optics,
+        nlayers=4,
+    )
+
+    transfer = model.layered_transport.build(
+        torch.full((1, 1), optics.rho_thermal, device=device, dtype=dtype),
+        torch.full((1, 1), optics.tau_thermal, device=device, dtype=dtype),
+        torch.full((1, 1), optics.rs_thermal, device=device, dtype=dtype),
+        torch.tensor([3.0], device=device, dtype=dtype),
+        torch.tensor([30.0], device=device, dtype=dtype),
+        torch.tensor([20.0], device=device, dtype=dtype),
+        torch.tensor([10.0], device=device, dtype=dtype),
+        hotspot=torch.full((1,), model.reflectance_model.default_hotspot, device=device, dtype=dtype),
+        lidf=model.reflectance_model.lidf,
+        nlayers=4,
+    )
+    emissivity_soil = 1.0 - optics.rs_thermal
+    hssu = emissivity_soil * model._stefan_boltzmann(torch.tensor([27.0], device=device, dtype=dtype))
+    hssh = emissivity_soil * model._stefan_boltzmann(torch.tensor([21.0], device=device, dtype=dtype))
+    hs = hssu * transfer.Ps[:, -1] + hssh * (1.0 - transfer.Ps[:, -1])
+    assert result.Emint.shape == (1, 5)
+    assert result.Eplut.shape == (1, 5)
+    assert result.Lote.shape == (1,)
+    assert result.Eoutte.shape == (1,)
+    assert torch.all(result.canopyemis > 0)
+    assert torch.allclose(
+        result.Eplut[:, -1],
+        optics.rs_thermal * result.Emint[:, -1] + hs,
+        atol=1e-12,
+        rtol=1e-10,
+    )
+    assert torch.allclose(result.Rnust, emissivity_soil * (result.Emint[:, -1] - hssu), atol=1e-12, rtol=1e-10)
+    assert torch.allclose(result.Rnhst, emissivity_soil * (result.Emint[:, -1] - hssh), atol=1e-12, rtol=1e-10)
+
+
+def test_canopy_thermal_integrated_balance_blackbody_emissivity_is_unity():
+    device = torch.device("cpu")
+    dtype = torch.float64
+    lidf = campbell_lidf(57.0, device=device, dtype=dtype)
+    model = CanopyThermalRadianceModel.from_scope_assets(lidf=lidf, device=device, dtype=dtype)
+
+    result = model.integrated_balance(
+        torch.tensor([3.0], device=device, dtype=dtype),
+        torch.tensor([30.0], device=device, dtype=dtype),
+        torch.tensor([20.0], device=device, dtype=dtype),
+        torch.tensor([10.0], device=device, dtype=dtype),
+        torch.full((1, 3), 25.0, device=device, dtype=dtype),
+        torch.full((1, 3), 23.0, device=device, dtype=dtype),
+        torch.tensor([27.0], device=device, dtype=dtype),
+        torch.tensor([21.0], device=device, dtype=dtype),
+        thermal_optics=ThermalOptics(rho_thermal=0.0, tau_thermal=0.0, rs_thermal=0.0),
+        nlayers=3,
+    )
+
+    assert torch.allclose(result.canopyemis, torch.ones_like(result.canopyemis), atol=1e-12, rtol=1e-10)
+
+
+def test_canopy_thermal_integrated_balance_orientation_constant_collapse():
+    device = torch.device("cpu")
+    dtype = torch.float64
+    lidf = scope_lidf(0.0, 0.0, device=device, dtype=dtype)
+    model = CanopyThermalRadianceModel.from_scope_assets(lidf=lidf, device=device, dtype=dtype)
+
+    layer_mean = model.integrated_balance(
+        torch.tensor([3.0], device=device, dtype=dtype),
+        torch.tensor([30.0], device=device, dtype=dtype),
+        torch.tensor([20.0], device=device, dtype=dtype),
+        torch.tensor([10.0], device=device, dtype=dtype),
+        torch.full((1, 3), 25.0, device=device, dtype=dtype),
+        torch.full((1, 3), 23.0, device=device, dtype=dtype),
+        torch.tensor([27.0], device=device, dtype=dtype),
+        torch.tensor([21.0], device=device, dtype=dtype),
+        nlayers=3,
+    )
+    oriented = model.integrated_balance(
+        torch.tensor([3.0], device=device, dtype=dtype),
+        torch.tensor([30.0], device=device, dtype=dtype),
+        torch.tensor([20.0], device=device, dtype=dtype),
+        torch.tensor([10.0], device=device, dtype=dtype),
+        torch.full((1, 3, 13, 36), 25.0, device=device, dtype=dtype),
+        torch.full((1, 3, 13, 36), 23.0, device=device, dtype=dtype),
+        torch.tensor([27.0], device=device, dtype=dtype),
+        torch.tensor([21.0], device=device, dtype=dtype),
+        nlayers=3,
+    )
+
+    assert oriented.Rnuct.shape == (1, 3, 468)
+    assert torch.allclose(oriented.Eoutte, layer_mean.Eoutte, atol=1e-12, rtol=1e-10)
+    assert torch.allclose(oriented.Lote, layer_mean.Lote, atol=1e-12, rtol=1e-10)
+    assert torch.allclose(oriented.Rnuct.mean(dim=-1), layer_mean.Rnuct, atol=1e-12, rtol=1e-10)

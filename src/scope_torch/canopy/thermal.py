@@ -29,6 +29,19 @@ class CanopyThermalRadianceResult:
     Eoutt: torch.Tensor
 
 
+@dataclass(slots=True)
+class CanopyThermalBalanceResult:
+    Lote: torch.Tensor
+    Eoutte: torch.Tensor
+    Emint: torch.Tensor
+    Eplut: torch.Tensor
+    Rnuct: torch.Tensor
+    Rnhct: torch.Tensor
+    Rnust: torch.Tensor
+    Rnhst: torch.Tensor
+    canopyemis: torch.Tensor
+
+
 def default_thermal_wavelengths(*, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
     reg2 = torch.arange(2500.0, 15001.0, 100.0, device=device, dtype=dtype)
     reg3 = torch.arange(16000.0, 50001.0, 1000.0, device=device, dtype=dtype)
@@ -176,12 +189,112 @@ class CanopyThermalRadianceModel:
             Eoutt=Eoutt,
         )
 
+    def integrated_balance(
+        self,
+        lai: torch.Tensor,
+        tts: torch.Tensor,
+        tto: torch.Tensor,
+        psi: torch.Tensor,
+        Tcu: torch.Tensor,
+        Tch: torch.Tensor,
+        Tsu: torch.Tensor,
+        Tsh: torch.Tensor,
+        *,
+        thermal_optics: ThermalOptics | None = None,
+        hotspot: Optional[torch.Tensor] = None,
+        lidf: Optional[torch.Tensor] = None,
+        nlayers: Optional[int] = None,
+    ) -> CanopyThermalBalanceResult:
+        thermal = thermal_optics or ThermalOptics()
+        device = self.reflectance_model.fluspect.device
+        dtype = self.reflectance_model.fluspect.dtype
+
+        lai_tensor = torch.as_tensor(lai, device=device, dtype=dtype)
+        if lai_tensor.ndim == 0:
+            lai_tensor = lai_tensor.unsqueeze(0)
+        batch = lai_tensor.shape[0]
+        hotspot_value = hotspot if hotspot is not None else torch.full_like(lai_tensor, self.reflectance_model.default_hotspot)
+
+        nl = self._resolve_nlayers(nlayers, Tcu=Tcu, Tch=Tch)
+        rho = self._broadcast_scalar_value(thermal.rho_thermal, batch, device=device, dtype=dtype)
+        tau = self._broadcast_scalar_value(thermal.tau_thermal, batch, device=device, dtype=dtype)
+        soil = self._broadcast_scalar_value(thermal.rs_thermal, batch, device=device, dtype=dtype)
+        transfer = self.layered_transport.build(
+            rho.unsqueeze(-1),
+            tau.unsqueeze(-1),
+            soil.unsqueeze(-1),
+            lai_tensor,
+            tts,
+            tto,
+            psi,
+            hotspot=hotspot_value,
+            lidf=self.reflectance_model.lidf if lidf is None else lidf,
+            nlayers=nl,
+        )
+
+        Tcu_tensor = self._prepare_layer_temperature(Tcu, batch, nl, transfer, device=device, dtype=dtype)
+        Tch_tensor = self._prepare_layer_temperature(Tch, batch, nl, transfer, device=device, dtype=dtype)
+        Tsu_tensor = self._expand_batch(Tsu, batch, device=device, dtype=dtype)
+        Tsh_tensor = self._expand_batch(Tsh, batch, device=device, dtype=dtype)
+
+        epsc = 1.0 - rho - tau
+        epss = 1.0 - soil
+        result = self._integrated_balance_core(
+            transfer=transfer,
+            epsc=epsc,
+            epss=epss,
+            Tcu=Tcu_tensor,
+            Tch=Tch_tensor,
+            Tsu=Tsu_tensor,
+            Tsh=Tsh_tensor,
+        )
+
+        black_transfer = self.layered_transport.build(
+            torch.zeros((batch, 1), device=device, dtype=dtype),
+            torch.zeros((batch, 1), device=device, dtype=dtype),
+            torch.zeros((batch, 1), device=device, dtype=dtype),
+            lai_tensor,
+            tts,
+            tto,
+            psi,
+            hotspot=hotspot_value,
+            lidf=self.reflectance_model.lidf if lidf is None else lidf,
+            nlayers=nl,
+        )
+        black = self._integrated_balance_core(
+            transfer=black_transfer,
+            epsc=torch.ones((batch,), device=device, dtype=dtype),
+            epss=torch.ones((batch,), device=device, dtype=dtype),
+            Tcu=Tcu_tensor,
+            Tch=Tch_tensor,
+            Tsu=Tsu_tensor,
+            Tsh=Tsh_tensor,
+        )
+        canopyemis = result["Eoutte"] / black["Eoutte"].clamp(min=1e-12)
+
+        return CanopyThermalBalanceResult(
+            Lote=result["Lote"],
+            Eoutte=result["Eoutte"],
+            Emint=result["Emint"],
+            Eplut=result["Eplut"],
+            Rnuct=result["Rnuct"],
+            Rnhct=result["Rnhct"],
+            Rnust=result["Rnust"],
+            Rnhst=result["Rnhst"],
+            canopyemis=canopyemis,
+        )
+
     def _planck(self, wavelength_nm: torch.Tensor, temperature_k: torch.Tensor, emissivity: torch.Tensor) -> torch.Tensor:
         c1 = torch.as_tensor(1.191066e-22, device=wavelength_nm.device, dtype=wavelength_nm.dtype)
         c2 = torch.as_tensor(14388.33, device=wavelength_nm.device, dtype=wavelength_nm.dtype)
         wavelength_term = (wavelength_nm * 1e-9) ** -5
         exponent = c2 / ((wavelength_nm * 1e-3) * temperature_k)
         return emissivity * c1 * wavelength_term / torch.expm1(exponent)
+
+    def _stefan_boltzmann(self, temperature_c: torch.Tensor) -> torch.Tensor:
+        sigma_sb = torch.as_tensor(5.670374419e-8, device=temperature_c.device, dtype=temperature_c.dtype)
+        kelvin = torch.clamp(temperature_c + 273.15, min=0.0)
+        return sigma_sb * kelvin**4
 
     def _broadcast_scalar_spectrum(self, value: torch.Tensor | float, batch: int, wavelength: torch.Tensor) -> torch.Tensor:
         tensor = torch.as_tensor(value, device=wavelength.device, dtype=wavelength.dtype)
@@ -202,6 +315,16 @@ class CanopyThermalRadianceModel:
         else:
             raise ValueError("Thermal optics must be scalar, 1D, or 2D")
         return tensor
+
+    def _broadcast_scalar_value(self, value: torch.Tensor | float, batch: int, *, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+        tensor = torch.as_tensor(value, device=device, dtype=dtype)
+        if tensor.ndim == 0:
+            return tensor.repeat(batch)
+        if tensor.ndim == 1 and tensor.shape[0] == batch:
+            return tensor
+        if tensor.ndim == 1 and tensor.shape[0] == 1 and batch != 1:
+            return tensor.expand(batch)
+        raise ValueError("Integrated thermal optics must broadcast to the batch dimension")
 
     def _prepare_layer_temperature(
         self,
@@ -266,3 +389,92 @@ class CanopyThermalRadianceModel:
             weights = transfer.lidf_azimuth.unsqueeze(1).unsqueeze(-1)
             return torch.sum(thermal * weights, dim=2)
         return thermal
+
+    def _integrated_canopy_emission(
+        self,
+        temperature_c: torch.Tensor,
+        emissivity: torch.Tensor,
+        transfer,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        stefan = self._stefan_boltzmann(temperature_c)
+        if stefan.ndim == 3:
+            thermal = emissivity.view(-1, 1, 1) * stefan
+        else:
+            thermal = emissivity.view(-1, 1) * stefan
+        if thermal.ndim == 3:
+            weights = transfer.lidf_azimuth.unsqueeze(1)
+            mean_thermal = torch.sum(thermal * weights, dim=2)
+            return thermal, mean_thermal
+        return thermal, thermal
+
+    def _integrated_balance_core(
+        self,
+        *,
+        transfer,
+        epsc: torch.Tensor,
+        epss: torch.Tensor,
+        Tcu: torch.Tensor,
+        Tch: torch.Tensor,
+        Tsu: torch.Tensor,
+        Tsh: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        batch = transfer.Ps.shape[0]
+        nl = transfer.nlayers
+        device = transfer.Ps.device
+        dtype = transfer.Ps.dtype
+
+        Hcsu3, Hcsu = self._integrated_canopy_emission(Tcu, epsc, transfer)
+        _, Hcsh = self._integrated_canopy_emission(Tch, epsc, transfer)
+        Hssu = epss * self._stefan_boltzmann(Tsu)
+        Hssh = epss * self._stefan_boltzmann(Tsh)
+
+        Hc = Hcsu * transfer.Ps[:, :nl] + Hcsh * (1.0 - transfer.Ps[:, :nl])
+        Hs = Hssu * transfer.Ps[:, -1] + Hssh * (1.0 - transfer.Ps[:, -1])
+
+        rho_dd = transfer.rho_dd[..., 0]
+        tau_dd = transfer.tau_dd[..., 0]
+        R_dd = transfer.R_dd[..., 0]
+        Emin = torch.zeros((batch, nl + 1), device=device, dtype=dtype)
+        Eplu = torch.zeros_like(Emin)
+        U = torch.zeros_like(Emin)
+        Y = torch.zeros((batch, nl), device=device, dtype=dtype)
+        U[:, -1] = Hs
+        for layer in range(nl - 1, -1, -1):
+            denom = (1.0 - rho_dd[:, layer] * R_dd[:, layer + 1]).clamp(min=1e-9)
+            Y[:, layer] = (rho_dd[:, layer] * U[:, layer + 1] + Hc[:, layer] * transfer.iLAI) / denom
+            U[:, layer] = tau_dd[:, layer] * (R_dd[:, layer + 1] * Y[:, layer] + U[:, layer + 1]) + Hc[:, layer] * transfer.iLAI
+        for layer in range(nl):
+            Emin[:, layer + 1] = transfer.Xdd[:, layer, 0] * Emin[:, layer] + Y[:, layer]
+            Eplu[:, layer] = transfer.R_dd[:, layer, 0] * Emin[:, layer] + U[:, layer]
+        Eplu[:, -1] = transfer.R_dd[:, -1, 0] * Emin[:, -1] + Hs
+
+        Po = transfer.Po[:, :nl]
+        Pso = transfer.Pso[:, :nl]
+        piLov = transfer.iLAI * (
+            transfer.ko.unsqueeze(-1) * Hcsh * (Po - Pso)
+            + transfer.ko.unsqueeze(-1) * Hcsu * Pso
+            + (transfer.vb[:, 0].unsqueeze(-1) * Emin[:, :nl] + transfer.vf[:, 0].unsqueeze(-1) * Eplu[:, :nl]) * Po
+        ).sum(dim=1)
+        piLos = Hssh * (transfer.Po[:, -1] - transfer.Pso[:, -1]) + Hssu * transfer.Pso[:, -1]
+        piLot = piLov + piLos
+        Lote = piLot / torch.pi
+        Eoutte = Eplu[:, 0]
+
+        common_leaf = epsc.unsqueeze(-1) * (Emin[:, :-1] + Eplu[:, 1:])
+        if Hcsu3.ndim == 3:
+            Rnuct = common_leaf.unsqueeze(-1) - 2.0 * Hcsu3
+        else:
+            Rnuct = common_leaf - 2.0 * Hcsu
+        Rnhct = common_leaf - 2.0 * Hcsh
+        Rnust = epss * (Emin[:, -1] - Hssu)
+        Rnhst = epss * (Emin[:, -1] - Hssh)
+        return {
+            "Lote": Lote,
+            "Eoutte": Eoutte,
+            "Emint": Emin,
+            "Eplut": Eplu,
+            "Rnuct": Rnuct,
+            "Rnhct": Rnhct,
+            "Rnust": Rnust,
+            "Rnhst": Rnhst,
+        }
