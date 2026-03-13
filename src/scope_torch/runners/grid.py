@@ -9,16 +9,19 @@ import xarray as xr
 from ..biochem import BiochemicalOptions, LeafBiochemistryInputs, LeafBiochemistryResult
 from ..canopy.fluorescence import (
     CanopyDirectionalFluorescenceResult,
+    CanopyFluorescenceProfileResult,
     CanopyFluorescenceModel,
     CanopyFluorescenceResult,
 )
 from ..canopy.reflectance import (
     CanopyDirectionalReflectanceResult,
+    CanopyRadiationProfileResult,
     CanopyReflectanceModel,
     CanopyReflectanceResult,
 )
 from ..canopy.thermal import (
     CanopyDirectionalThermalResult,
+    CanopyThermalProfileResult,
     CanopyThermalRadianceModel,
     CanopyThermalRadianceResult,
     ThermalOptics,
@@ -253,6 +256,84 @@ class ScopeGridRunner:
             directional_tto=tto_angles,
             directional_psi=psi_angles,
             variable_dims={"refl_": ("direction", "wavelength"), "rso_": ("direction", "wavelength")},
+        )
+
+    def run_reflectance_profiles(
+        self,
+        data_module: ScopeGridDataModule,
+        *,
+        varmap: Mapping[str, str],
+        hotspot_var: Optional[str] = None,
+        nlayers: Optional[int] = None,
+    ) -> Dict[str, torch.Tensor]:
+        outputs: dict[str, list[torch.Tensor]] = {name: [] for name in CanopyRadiationProfileResult.__dataclass_fields__}
+        expected_layer_count: Optional[int] = None
+        for batch in data_module.iter_batches():
+            leaf_kwargs = self._leafbio_kwargs(batch, varmap)
+            leafbio = LeafBioBatch(**leaf_kwargs)
+            lai = batch[varmap["LAI"]]
+            tts = batch[varmap["tts"]]
+            tto = batch[varmap["tto"]]
+            psi = batch[varmap["psi"]]
+            soil = self._soil_refl(batch, varmap)
+            Esun = self._optical_directional_input(batch, varmap, "Esun")
+            Esky = self._optical_directional_input(batch, varmap, "Esky")
+            if hotspot_var and hotspot_var in batch:
+                hotspot = batch[hotspot_var]
+            else:
+                hotspot = torch.full_like(lai, self.default_hotspot)
+
+            result = self.reflectance_model.profiles(
+                leafbio,
+                soil,
+                lai,
+                tts,
+                tto,
+                psi,
+                Esun,
+                Esky,
+                hotspot=hotspot,
+                nlayers=self._layer_count(nlayers, etau=None, etah=None, Tcu=None, Tch=None),
+            )
+            expected_layer_count = self._accumulate_profile_layer_count(expected_layer_count, result.Ps)
+            for name in outputs:
+                outputs[name].append(getattr(result, name))
+
+        return {name: torch.cat(chunks, dim=0) for name, chunks in outputs.items()}
+
+    def run_reflectance_profiles_dataset(
+        self,
+        data_module: ScopeGridDataModule,
+        *,
+        varmap: Mapping[str, str],
+        hotspot_var: Optional[str] = None,
+        nlayers: Optional[int] = None,
+    ) -> xr.Dataset:
+        outputs = self.run_reflectance_profiles(
+            data_module,
+            varmap=varmap,
+            hotspot_var=hotspot_var,
+            nlayers=nlayers,
+        )
+        return self._profile_outputs_to_dataset(
+            data_module,
+            outputs,
+            product="reflectance_profiles",
+            layer_count=self._profile_layer_count_from_tensor(outputs["Ps"]),
+            variable_dims={
+                "Ps": ("layer_interface",),
+                "Po": ("layer_interface",),
+                "Pso": ("layer_interface",),
+                "Es_direct_": ("layer_interface", "wavelength"),
+                "Emin_direct_": ("layer_interface", "wavelength"),
+                "Eplu_direct_": ("layer_interface", "wavelength"),
+                "Es_diffuse_": ("layer_interface", "wavelength"),
+                "Emin_diffuse_": ("layer_interface", "wavelength"),
+                "Eplu_diffuse_": ("layer_interface", "wavelength"),
+                "Es_": ("layer_interface", "wavelength"),
+                "Emin_": ("layer_interface", "wavelength"),
+                "Eplu_": ("layer_interface", "wavelength"),
+            },
         )
 
     def run_biochemical_fluorescence(
@@ -729,6 +810,82 @@ class ScopeGridRunner:
             variable_dims={"LoF_": ("direction", "fluorescence_wavelength")},
         )
 
+    def run_fluorescence_profiles(
+        self,
+        data_module: ScopeGridDataModule,
+        *,
+        varmap: Mapping[str, str],
+        hotspot_var: Optional[str] = None,
+        nlayers: Optional[int] = None,
+    ) -> Dict[str, torch.Tensor]:
+        outputs: dict[str, list[torch.Tensor]] = {name: [] for name in CanopyFluorescenceProfileResult.__dataclass_fields__}
+        expected_layer_count: Optional[int] = None
+        for batch in data_module.iter_batches():
+            leaf_kwargs = self._leafbio_kwargs(batch, varmap)
+            leafbio = LeafBioBatch(**leaf_kwargs)
+            lai = batch[varmap["LAI"]]
+            tts = batch[varmap["tts"]]
+            tto = batch[varmap["tto"]]
+            psi = batch[varmap["psi"]]
+            Esun = self._spectral_input(batch, varmap, "Esun_")
+            Esky = self._spectral_input(batch, varmap, "Esky_")
+            soil = self._soil_refl(batch, varmap)
+            etau = batch[varmap["etau"]] if "etau" in varmap and varmap["etau"] in batch else None
+            etah = batch[varmap["etah"]] if "etah" in varmap and varmap["etah"] in batch else None
+            if hotspot_var and hotspot_var in batch:
+                hotspot = batch[hotspot_var]
+            else:
+                hotspot = torch.full_like(lai, self.default_hotspot)
+
+            result = self.fluorescence_model.profiles(
+                leafbio,
+                soil,
+                lai,
+                tts,
+                tto,
+                psi,
+                Esun,
+                Esky,
+                etau=etau,
+                etah=etah,
+                hotspot=hotspot,
+                nlayers=self._layer_count(nlayers, etau=etau, etah=etah, Tcu=None, Tch=None),
+            )
+            expected_layer_count = self._accumulate_profile_layer_count(expected_layer_count, result.Ps)
+            for name in outputs:
+                outputs[name].append(getattr(result, name))
+
+        return {name: torch.cat(chunks, dim=0) for name, chunks in outputs.items()}
+
+    def run_fluorescence_profiles_dataset(
+        self,
+        data_module: ScopeGridDataModule,
+        *,
+        varmap: Mapping[str, str],
+        hotspot_var: Optional[str] = None,
+        nlayers: Optional[int] = None,
+    ) -> xr.Dataset:
+        outputs = self.run_fluorescence_profiles(
+            data_module,
+            varmap=varmap,
+            hotspot_var=hotspot_var,
+            nlayers=nlayers,
+        )
+        return self._profile_outputs_to_dataset(
+            data_module,
+            outputs,
+            product="fluorescence_profiles",
+            layer_count=self._profile_layer_count_from_tensor(outputs["Ps"]),
+            variable_dims={
+                "Ps": ("layer_interface",),
+                "Po": ("layer_interface",),
+                "Pso": ("layer_interface",),
+                "Fmin_": ("layer_interface", "fluorescence_wavelength"),
+                "Fplu_": ("layer_interface", "fluorescence_wavelength"),
+                "layer_fluorescence": ("layer",),
+            },
+        )
+
     def run_layered_fluorescence(
         self,
         data_module: ScopeGridDataModule,
@@ -937,6 +1094,83 @@ class ScopeGridRunner:
             variable_dims={"Lot_": ("direction", "thermal_wavelength"), "BrightnessT": ("direction",)},
         )
 
+    def run_thermal_profiles(
+        self,
+        data_module: ScopeGridDataModule,
+        *,
+        varmap: Mapping[str, str],
+        hotspot_var: Optional[str] = None,
+        nlayers: Optional[int] = None,
+    ) -> Dict[str, torch.Tensor]:
+        outputs: dict[str, list[torch.Tensor]] = {name: [] for name in CanopyThermalProfileResult.__dataclass_fields__}
+        expected_layer_count: Optional[int] = None
+        for batch in data_module.iter_batches():
+            lai = batch[varmap["LAI"]]
+            tts = batch[varmap["tts"]]
+            tto = batch[varmap["tto"]]
+            psi = batch[varmap["psi"]]
+            Tcu = batch[varmap["Tcu"]]
+            Tch = batch[varmap["Tch"]]
+            Tsu = batch[varmap["Tsu"]]
+            Tsh = batch[varmap["Tsh"]]
+            if hotspot_var and hotspot_var in batch:
+                hotspot = batch[hotspot_var]
+            else:
+                hotspot = torch.full_like(lai, self.default_hotspot)
+            thermal_optics = ThermalOptics(
+                rho_thermal=batch[varmap["rho_thermal"]] if "rho_thermal" in varmap and varmap["rho_thermal"] in batch else 0.01,
+                tau_thermal=batch[varmap["tau_thermal"]] if "tau_thermal" in varmap and varmap["tau_thermal"] in batch else 0.01,
+                rs_thermal=batch[varmap["rs_thermal"]] if "rs_thermal" in varmap and varmap["rs_thermal"] in batch else 0.06,
+            )
+
+            result = self.thermal_model.profiles(
+                lai,
+                tts,
+                tto,
+                psi,
+                Tcu,
+                Tch,
+                Tsu,
+                Tsh,
+                thermal_optics=thermal_optics,
+                hotspot=hotspot,
+                nlayers=self._layer_count(nlayers, etau=None, etah=None, Tcu=Tcu, Tch=Tch),
+            )
+            expected_layer_count = self._accumulate_profile_layer_count(expected_layer_count, result.Ps)
+            for name in outputs:
+                outputs[name].append(getattr(result, name))
+
+        return {name: torch.cat(chunks, dim=0) for name, chunks in outputs.items()}
+
+    def run_thermal_profiles_dataset(
+        self,
+        data_module: ScopeGridDataModule,
+        *,
+        varmap: Mapping[str, str],
+        hotspot_var: Optional[str] = None,
+        nlayers: Optional[int] = None,
+    ) -> xr.Dataset:
+        outputs = self.run_thermal_profiles(
+            data_module,
+            varmap=varmap,
+            hotspot_var=hotspot_var,
+            nlayers=nlayers,
+        )
+        return self._profile_outputs_to_dataset(
+            data_module,
+            outputs,
+            product="thermal_profiles",
+            layer_count=self._profile_layer_count_from_tensor(outputs["Ps"]),
+            variable_dims={
+                "Ps": ("layer_interface",),
+                "Po": ("layer_interface",),
+                "Pso": ("layer_interface",),
+                "Emint_": ("layer_interface", "thermal_wavelength"),
+                "Eplut_": ("layer_interface", "thermal_wavelength"),
+                "layer_thermal_upward": ("layer",),
+            },
+        )
+
     def _outputs_to_dataset(
         self,
         data_module: ScopeGridDataModule,
@@ -985,6 +1219,26 @@ class ScopeGridRunner:
             directional_psi=("direction", torch.as_tensor(directional_psi).detach().cpu().numpy()),
         )
         return dataset
+
+    def _profile_outputs_to_dataset(
+        self,
+        data_module: ScopeGridDataModule,
+        outputs: Mapping[str, torch.Tensor],
+        *,
+        product: str,
+        layer_count: int,
+        variable_dims: Mapping[str, Sequence[str]],
+    ) -> xr.Dataset:
+        dataset_layer = data_module.dataset.coords.get("layer")
+        if dataset_layer is not None and int(dataset_layer.size) != layer_count:
+            raise ValueError(f"Dataset layer coordinate has size {dataset_layer.size}, expected {layer_count}")
+        variable_coords = self._output_coords(layer_count)
+        return data_module.assemble_dataset(
+            {name: torch.as_tensor(value) for name, value in outputs.items()},
+            variable_dims=variable_dims,
+            variable_coords=variable_coords,
+            attrs={"scope_torch_product": product},
+        )
 
     def _dataset_tensor(self, value: torch.Tensor) -> torch.Tensor:
         tensor = torch.as_tensor(value)
@@ -1199,6 +1453,18 @@ class ScopeGridRunner:
         if tensor.numel() == 0:
             raise ValueError("Directional angle arrays must not be empty")
         return tensor
+
+    def _profile_layer_count_from_tensor(self, value: torch.Tensor) -> int:
+        tensor = torch.as_tensor(value)
+        if tensor.ndim < 2 or tensor.shape[1] < 1:
+            raise ValueError("Profile outputs must include a layer-interface axis")
+        return int(tensor.shape[1]) - 1
+
+    def _accumulate_profile_layer_count(self, expected: Optional[int], value: torch.Tensor) -> int:
+        current = self._profile_layer_count_from_tensor(value)
+        if expected is not None and current != expected:
+            raise ValueError("Profile workflows require a uniform layer count across all batches")
+        return current
 
     def _layer_count(
         self,
