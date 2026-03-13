@@ -20,8 +20,8 @@
 ### Still incomplete or narrow
 
 1. The default CI path covers the Python test suite and committed benchmark summaries, but it does not run MATLAB parity gates automatically.
-2. Device coverage is only partially institutionalized: coupled batched-vs-single and optional CPU-vs-GPU checks now exist, but there is no broader dtype/device matrix yet.
-3. Workflow parity is still narrow around downstream file-format conventions beyond NetCDF and around option coverage.
+2. Device coverage is only partially institutionalized: standalone reflectance, fluorescence, biochemical fluorescence, and thermal runner paths now have batched-vs-single and dtype coverage, with optional CUDA mirrors on selected workflows, but there is still no broader dtype/device matrix across the coupled workflows and lower-level kernels.
+3. Workflow parity is still narrow around downstream option coverage and any export targets beyond the current shared NetCDF writer.
 
 ### Main accuracy and scope gaps
 
@@ -32,7 +32,7 @@
 3. **The raw energy-balance iterate diagnostics are still easy to misread.**
    End-of-iteration same-state parity is now negligible, but the phase-lagged `energy_balance.sunlit_A` and `energy_balance.shaded_A` fields in the raw comparison reports still look worse than the true leaf-kernel parity because they compare the final leaf solve against post-update boundary states. The harness now exports like-for-like iteration inputs to separate those cases, but that distinction is not yet documented widely in the repo.
 4. **GPU and batched consistency are only partially institutionalized.**
-   The earlier CPU/detach hot spots are gone from the implemented kernels, and there is now a coupled batched-vs-single regression plus an optional CPU-vs-GPU check for the energy/thermal path. Broader device, dtype, and workflow coverage is still missing.
+   The earlier CPU/detach hot spots are gone from the implemented kernels, there is now coupled energy/thermal batched-vs-single coverage plus standalone runner batch-size and dtype coverage, and selected standalone workflows have optional CPU-vs-GPU checks. Broader device, dtype, and workflow coverage is still missing.
 5. **Workflow exports are still narrower than the model core.**
    Input preparation, chunk-local batching, metadata-preserving `xarray` assembly, and NetCDF export are now implemented, but downstream format parity beyond NetCDF is not finished.
 
@@ -71,7 +71,7 @@ Completed:
 3. Added soil-library and BSM soil support.
 
 Remaining finish items:
-1. Extend the current coupled consistency checks to more kernels and more dtype/device combinations.
+1. Extend the current consistency checks to more lower-level kernels and to the coupled runner workflows across more dtype/device combinations.
 2. Add a small set of mixed-dtype smoke tests if GPU support is expected in day-to-day use.
 
 ### Phase 1: SCOPE-facing reflectance core
@@ -127,8 +127,8 @@ Completed:
 3. Extended `ScopeGridRunner` to preserve metadata and assemble results back into `xarray.Dataset`s for the main workflows.
 
 Remaining finish items:
-1. Add any remaining tabular or downstream-specific exports needed beyond the shared NetCDF writer.
-2. Expose any remaining workflow options needed for parity with current downstream pipelines.
+1. Expose any remaining workflow options needed for parity with current downstream pipelines.
+2. Add any remaining tabular or downstream-specific exports needed beyond the shared NetCDF writer only if those are still required by real consumers.
 
 Exit criteria:
 1. A prepared ROI/time dataset can be simulated end-to-end and written back with coordinates and metadata intact.
@@ -142,11 +142,13 @@ Completed:
 1. Kept the widened 100-case MATLAB suite and the single-scene/time-series parity gates in sync with the benchmark exports.
 2. Turned the committed suite summaries into versioned tolerances in pytest.
 3. Added coupled batched-vs-single regression checks and an optional CPU-vs-GPU check for the energy/thermal path.
-4. Wired the standard Python test suite into GitHub Actions CI.
+4. Added batched-vs-single and dtype regression coverage for the standalone reflectance, fluorescence, biochemical fluorescence, and thermal runner paths, plus optional CUDA mirrors on selected standalone workflows.
+5. Wired the standard Python test suite into GitHub Actions CI.
 
 Remaining finish items:
-1. Decide whether to add a self-hosted or opt-in CI lane for MATLAB parity regeneration.
-2. Broaden consistency checks beyond the current coupled energy/thermal path.
+1. Extend the execution matrix to the coupled runner workflows and more lower-level kernels.
+2. Decide whether to add a self-hosted or opt-in CI lane for MATLAB parity regeneration.
+3. Add mixed-dtype or broader backend coverage if those execution modes are expected in production use.
 
 Exit criteria:
 1. Each implemented physics module has reference-backed regression tests in automated CI.
@@ -155,17 +157,18 @@ Exit criteria:
 
 ## 4. Suggested Next Step
 
-The next step should be **broader execution-mode coverage plus downstream workflow polish**.
+The next step should be **finish the execution matrix for the coupled workflows and document the benchmark policy more clearly**.
 
 Recommended sequence:
 
-1. Extend batched-vs-single and CPU-vs-GPU checks beyond the current coupled energy/thermal path.
-2. Add any remaining downstream-specific exports needed beyond the shared NetCDF writer.
-3. Decide whether MATLAB parity should remain opt-in or move to a dedicated self-hosted CI lane.
-4. Document the same-state versus phase-lagged energy diagnostics more clearly in the benchmark reports and docs.
+1. Extend the current execution-mode checks to the coupled runner workflows, especially `run_energy_balance_fluorescence(...)` and `run_energy_balance_thermal(...)`, not just the underlying energy model and the standalone runner paths.
+2. Add any missing lower-level dtype/device smoke tests that would catch kernel-specific regressions before they show up in the runners.
+3. Promote the same-state versus phase-lagged energy-diagnostic distinction into the docs and benchmark summaries so future parity regressions are easier to interpret.
+4. After the execution matrix is stable, decide whether MATLAB parity should remain opt-in or move to a dedicated self-hosted CI lane.
+5. Only then add any extra downstream-specific export targets if a real consumer still needs them beyond NetCDF.
 
 Why this should be next:
 
-1. The core model, ROI/time workflow, benchmark policy, and NetCDF export surface are now in place, so the remaining gaps are mostly around execution breadth and downstream polish.
-2. The widened scene and time-series suites already constrain the physics stack tightly enough that broader execution-mode coverage can proceed safely.
+1. The core model, ROI/time workflow, benchmark policy, NetCDF export surface, and standalone runner execution-mode coverage are already in place, so the highest remaining risk is drift in the coupled workflow surface rather than missing features.
+2. The widened scene and time-series suites already constrain the physics stack tightly enough that the remaining execution-mode work can proceed safely.
 3. CI and committed summary tolerances now exist, which makes it practical to harden the remaining workflow surface without losing parity visibility.
