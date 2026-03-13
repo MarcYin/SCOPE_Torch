@@ -78,3 +78,35 @@ def test_scene_suite_stable_summary_path_relativizes_repo_paths():
     reports_dir = repo_root / "tests" / "data" / "timeseries_benchmark_reports"
 
     assert module._SCENE_SUITE._stable_summary_path(reports_dir, repo_root) == "tests/data/timeseries_benchmark_reports"
+
+
+def test_scene_suite_summary_subset_allows_empty_absolute_policy_subset():
+    module = _load_suite_module()
+    summary = {
+        "max_abs": {
+            "reflectance.refl": {
+                "case": "026",
+                "max_abs": 1.0,
+                "mean_abs": 0.5,
+                "max_rel": 0.1,
+                "mean_rel": 0.05,
+            }
+        },
+        "max_rel": {
+            "reflectance.refl": {
+                "case": "026",
+                "max_abs": 1.0,
+                "mean_abs": 0.5,
+                "max_rel": 0.1,
+                "mean_rel": 0.05,
+            }
+        },
+    }
+
+    subset = module._SCENE_SUITE._summary_subset(
+        summary,
+        sorted(module._SCENE_SUITE.LOW_MAGNITUDE_ABSOLUTE_POLICY_METRICS),
+    )
+
+    assert subset == {"max_abs": {}, "max_rel": {}}
+    assert module._SCENE_SUITE._highlight(subset, list(subset["max_abs"])) == {}

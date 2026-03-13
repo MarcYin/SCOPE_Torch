@@ -13,6 +13,33 @@ from typing import Any
 
 DEFAULT_MATLAB = "/Applications/MATLAB_R2025b.app/bin/matlab"
 NONCONVERGED_ENERGY_PREFIXES = ("energy_balance.", "energy_iteration_input.")
+PHASE_LAGGED_ENERGY_METRICS = {
+    "energy_balance.sunlit_A",
+    "energy_balance.shaded_A",
+    "energy_balance.sunlit_Ci",
+    "energy_balance.shaded_Ci",
+    "energy_balance.sunlit_eta",
+    "energy_balance.shaded_eta",
+    "energy_balance.sunlit_rcw",
+    "energy_balance.shaded_rcw",
+}
+LOW_MAGNITUDE_ABSOLUTE_POLICY_METRICS = {
+    "energy_balance.Rnuc",
+    "energy_balance.Rnhc",
+    "energy_balance.Rnuct",
+    "energy_balance.Rnhct",
+}
+RELATIVE_PARITY_EXCLUDE = PHASE_LAGGED_ENERGY_METRICS | LOW_MAGNITUDE_ABSOLUTE_POLICY_METRICS
+PHASE_LAGGED_METRIC_REPLACEMENTS = {
+    "energy_balance.sunlit_A": "leaf_iteration.sunlit_A",
+    "energy_balance.shaded_A": "leaf_iteration.shaded_A",
+    "energy_balance.sunlit_Ci": "leaf_iteration.sunlit_Ci",
+    "energy_balance.shaded_Ci": "leaf_iteration.shaded_Ci",
+    "energy_balance.sunlit_eta": "leaf_iteration.sunlit_eta",
+    "energy_balance.shaded_eta": "leaf_iteration.shaded_eta",
+    "energy_balance.sunlit_rcw": "leaf_iteration.sunlit_rcw",
+    "energy_balance.shaded_rcw": "leaf_iteration.shaded_rcw",
+}
 
 
 def _discover_default_cases(repo_root: Path) -> list[int]:
@@ -39,6 +66,22 @@ def _stable_summary_path(path: Path, repo_root: Path) -> str | None:
         return str(path.relative_to(repo_root))
     except ValueError:
         return None
+
+
+def _available_summary_keys(summary: dict[str, dict[str, dict[str, Any]]], keys: list[str]) -> list[str]:
+    return [
+        key
+        for key in keys
+        if key in summary["max_abs"] and key in summary["max_rel"]
+    ]
+
+
+def _summary_subset(summary: dict[str, dict[str, dict[str, Any]]], keys: list[str]) -> dict[str, dict[str, dict[str, Any]]]:
+    selected = _available_summary_keys(summary, keys)
+    return {
+        "max_abs": {key: summary["max_abs"][key] for key in selected},
+        "max_rel": {key: summary["max_rel"][key] for key in selected},
+    }
 
 
 def _worst_cases(per_case: dict[str, dict[str, dict[str, dict[str, float]]]]) -> dict[str, dict[str, dict[str, Any]]]:
@@ -250,14 +293,20 @@ def main() -> int:
         for case_id, status in case_status.items()
         if status and not status.get("energy_converged", True)
     }
-    parity_exclude = {
-        "energy_balance.sunlit_A",
-        "energy_balance.shaded_A",
-    }
+    parity_exclude = set(RELATIVE_PARITY_EXCLUDE)
     parity_worst = _filtered_worst_cases(
         per_case,
         exclude=parity_exclude,
         nonconverged_energy_cases=nonconverged_energy_cases,
+    )
+    absolute_policy_source = _filtered_worst_cases(
+        per_case,
+        exclude=set(PHASE_LAGGED_ENERGY_METRICS),
+        nonconverged_energy_cases=nonconverged_energy_cases,
+    )
+    absolute_policy_worst = _summary_subset(
+        absolute_policy_source,
+        sorted(LOW_MAGNITUDE_ABSOLUTE_POLICY_METRICS),
     )
     stress_worst = _subset_worst_cases(
         per_case,
@@ -266,33 +315,38 @@ def main() -> int:
     )
     highlights = _highlight(
         parity_worst,
-        keys=[
-            "reflectance.refl",
-            "resistances_direct.raa",
-            "resistances_direct.raws",
-            "fluorescence_transport.EoutFrc_",
-            "fluorescence_transport.sigmaF",
-            "thermal_transport.Eoutte_",
-            "leaf_iteration.sunlit_A",
-            "leaf_iteration.shaded_A",
-            "energy_iteration_input.sunlit_Cs",
-            "energy_iteration_input.shaded_Cs",
-            "energy_balance.Rnuc_sw",
-            "energy_balance.Rnhc_sw",
-            "energy_balance.Rnuct",
-            "energy_balance.Rnhct",
-            "energy_balance.Rntot",
-            "energy_balance.lEtot",
-            "energy_balance.Htot",
-            "energy_balance.Tcu",
-            "energy_balance.Tch",
-            "energy_balance.Tsu",
-            "energy_balance.Tsh",
-            "energy_balance.canopyemis",
-            "energy_balance.sunlit_rcw",
-            "energy_balance.shaded_rcw",
-            "energy_balance.L",
-        ],
+        keys=_available_summary_keys(
+            parity_worst,
+            [
+                "reflectance.refl",
+                "resistances_direct.raa",
+                "resistances_direct.raws",
+                "fluorescence_transport.EoutFrc_",
+                "fluorescence_transport.sigmaF",
+                "thermal_transport.Eoutte_",
+                "leaf_iteration.sunlit_A",
+                "leaf_iteration.shaded_A",
+                "leaf_iteration.sunlit_rcw",
+                "leaf_iteration.shaded_rcw",
+                "energy_iteration_input.sunlit_Cs",
+                "energy_iteration_input.shaded_Cs",
+                "energy_balance.Rnuc_sw",
+                "energy_balance.Rnhc_sw",
+                "energy_balance.Rntot",
+                "energy_balance.lEtot",
+                "energy_balance.Htot",
+                "energy_balance.Tcu",
+                "energy_balance.Tch",
+                "energy_balance.Tsu",
+                "energy_balance.Tsh",
+                "energy_balance.canopyemis",
+                "energy_balance.L",
+            ],
+        ),
+    )
+    absolute_highlights = _highlight(
+        absolute_policy_worst,
+        keys=list(absolute_policy_worst["max_abs"]),
     )
     summary = {
         "cases": cases,
@@ -302,6 +356,9 @@ def main() -> int:
         "nonconverged_energy_cases": sorted(nonconverged_energy_cases),
         "parity_policy": {
             "always_excluded_metrics": sorted(parity_exclude),
+            "phase_lagged_metric_replacements": PHASE_LAGGED_METRIC_REPLACEMENTS,
+            "absolute_policy_metrics": sorted(LOW_MAGNITUDE_ABSOLUTE_POLICY_METRICS),
+            "absolute_policy_rule": "Use max_abs rather than max_rel for low-magnitude canopy thermal component terms whose absolute errors stay negligible while relative errors are unstable.",
             "nonconverged_energy_metric_prefixes": list(NONCONVERGED_ENERGY_PREFIXES),
             "nonconverged_energy_case_rule": "Exclude energy-balance and energy-iteration parity metrics for upstream scenes that hit ebal max iterations; retain them as stress diagnostics.",
         },
@@ -309,8 +366,10 @@ def main() -> int:
         "worst_cases": worst,
         "parity_exclude": sorted(parity_exclude),
         "parity_worst_cases": parity_worst,
+        "absolute_policy_worst_cases": absolute_policy_worst,
         "stress_worst_cases": stress_worst,
         "highlights": highlights,
+        "absolute_highlights": absolute_highlights,
     }
     summary_json.parent.mkdir(parents=True, exist_ok=True)
     summary_json.write_text(json.dumps(summary, indent=2), encoding="utf-8")
@@ -322,6 +381,14 @@ def main() -> int:
             f"worst_max_abs={values['worst_max_abs']:.6e} (case {values['worst_max_abs_case']}) "
             f"worst_max_rel={values['worst_max_rel']:.6e} (case {values['worst_max_rel_case']})"
         )
+    if absolute_highlights:
+        print("\nAbsolute-policy energy components:")
+        for key, values in absolute_highlights.items():
+            print(
+                f"{key:<36} "
+                f"worst_max_abs={values['worst_max_abs']:.6e} (case {values['worst_max_abs_case']}) "
+                f"worst_max_rel={values['worst_max_rel']:.6e} (case {values['worst_max_rel_case']})"
+            )
     print(f"\nWrote suite summary to {summary_json}")
     return 0
 

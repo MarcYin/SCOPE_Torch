@@ -813,9 +813,36 @@
   ],
   "parity_policy": {
     "always_excluded_metrics": [
+      "energy_balance.Rnhc",
+      "energy_balance.Rnhct",
+      "energy_balance.Rnuc",
+      "energy_balance.Rnuct",
       "energy_balance.shaded_A",
-      "energy_balance.sunlit_A"
+      "energy_balance.shaded_Ci",
+      "energy_balance.shaded_eta",
+      "energy_balance.shaded_rcw",
+      "energy_balance.sunlit_A",
+      "energy_balance.sunlit_Ci",
+      "energy_balance.sunlit_eta",
+      "energy_balance.sunlit_rcw"
     ],
+    "phase_lagged_metric_replacements": {
+      "energy_balance.sunlit_A": "leaf_iteration.sunlit_A",
+      "energy_balance.shaded_A": "leaf_iteration.shaded_A",
+      "energy_balance.sunlit_Ci": "leaf_iteration.sunlit_Ci",
+      "energy_balance.shaded_Ci": "leaf_iteration.shaded_Ci",
+      "energy_balance.sunlit_eta": "leaf_iteration.sunlit_eta",
+      "energy_balance.shaded_eta": "leaf_iteration.shaded_eta",
+      "energy_balance.sunlit_rcw": "leaf_iteration.sunlit_rcw",
+      "energy_balance.shaded_rcw": "leaf_iteration.shaded_rcw"
+    },
+    "absolute_policy_metrics": [
+      "energy_balance.Rnhc",
+      "energy_balance.Rnhct",
+      "energy_balance.Rnuc",
+      "energy_balance.Rnuct"
+    ],
+    "absolute_policy_rule": "Use max_abs rather than max_rel for low-magnitude canopy thermal component terms whose absolute errors stay negligible while relative errors are unstable.",
     "nonconverged_energy_metric_prefixes": [
       "energy_balance.",
       "energy_iteration_input."
@@ -62389,8 +62416,18 @@
     }
   },
   "parity_exclude": [
+    "energy_balance.Rnhc",
+    "energy_balance.Rnhct",
+    "energy_balance.Rnuc",
+    "energy_balance.Rnuct",
     "energy_balance.shaded_A",
-    "energy_balance.sunlit_A"
+    "energy_balance.shaded_Ci",
+    "energy_balance.shaded_eta",
+    "energy_balance.shaded_rcw",
+    "energy_balance.sunlit_A",
+    "energy_balance.sunlit_Ci",
+    "energy_balance.sunlit_eta",
+    "energy_balance.sunlit_rcw"
   ],
   "parity_worst_cases": {
     "max_abs": {
@@ -62779,48 +62816,6 @@
         "max_rel": 1.4712412745312687e-12,
         "mean_rel": 5.753351113676068e-14
       },
-      "energy_balance.sunlit_eta": {
-        "case": "017",
-        "max_abs": 1.0412766412004615e-05,
-        "mean_abs": 1.0204156570695186e-05,
-        "max_rel": 7.733778296444921e-06,
-        "mean_rel": 7.51395398655141e-06
-      },
-      "energy_balance.shaded_eta": {
-        "case": "035",
-        "max_abs": 1.1111794015583598e-05,
-        "mean_abs": 3.448365342042856e-06,
-        "max_rel": 8.17581425754468e-06,
-        "mean_rel": 2.6789443114570113e-06
-      },
-      "energy_balance.sunlit_Ci": {
-        "case": "003",
-        "max_abs": 0.026651221744486975,
-        "mean_abs": 0.020718960819180343,
-        "max_rel": 5.1599488366955015e-05,
-        "mean_rel": 2.4298505339438145e-05
-      },
-      "energy_balance.shaded_Ci": {
-        "case": "029",
-        "max_abs": 0.07970124247981403,
-        "mean_abs": 0.02305103422283142,
-        "max_rel": 0.00012171305497578645,
-        "mean_rel": 1.8057941619334923e-05
-      },
-      "energy_balance.sunlit_rcw": {
-        "case": "029",
-        "max_abs": 23.13279967602557,
-        "mean_abs": 0.4286481899528825,
-        "max_rel": 0.007961398094898268,
-        "mean_rel": 0.00011444442204764414
-      },
-      "energy_balance.shaded_rcw": {
-        "case": "029",
-        "max_abs": 0.5866411468059596,
-        "mean_abs": 0.03311287815454464,
-        "max_rel": 8.56499602220229e-05,
-        "mean_rel": 8.048530844256498e-06
-      },
       "energy_balance.Tcu": {
         "case": "049",
         "max_abs": 4.867610271830358e-05,
@@ -62876,34 +62871,6 @@
         "mean_abs": 6.394884621840902e-14,
         "max_rel": 1.1035634937839868e-15,
         "mean_rel": 1.1035634937839868e-15
-      },
-      "energy_balance.Rnuct": {
-        "case": "049",
-        "max_abs": 0.00044644005390637176,
-        "mean_abs": 0.0003349735416113967,
-        "max_rel": 3.4358448675899804e-05,
-        "mean_rel": 9.580420557091872e-06
-      },
-      "energy_balance.Rnhct": {
-        "case": "074",
-        "max_abs": 0.0003465525655883539,
-        "mean_abs": 0.0002366790633459459,
-        "max_rel": 0.0012881649909918407,
-        "mean_rel": 5.3737986496859364e-05
-      },
-      "energy_balance.Rnuc": {
-        "case": "049",
-        "max_abs": 0.00044644005390637176,
-        "mean_abs": 0.00033497354161314574,
-        "max_rel": 3.7173836257257683e-06,
-        "mean_rel": 2.9851208884596255e-06
-      },
-      "energy_balance.Rnhc": {
-        "case": "074",
-        "max_abs": 0.00034655256560256475,
-        "mean_abs": 0.00023667906335115654,
-        "max_rel": 4.583089501706188e-05,
-        "mean_rel": 1.0021808910159951e-05
       },
       "energy_balance.Rnus": {
         "case": "050",
@@ -63446,48 +63413,6 @@
         "max_rel": 1.4712412745312687e-12,
         "mean_rel": 5.753351113676068e-14
       },
-      "energy_balance.sunlit_eta": {
-        "case": "017",
-        "max_abs": 1.0412766412004615e-05,
-        "mean_abs": 1.0204156570695186e-05,
-        "max_rel": 7.733778296444921e-06,
-        "mean_rel": 7.51395398655141e-06
-      },
-      "energy_balance.shaded_eta": {
-        "case": "035",
-        "max_abs": 1.1111794015583598e-05,
-        "mean_abs": 3.448365342042856e-06,
-        "max_rel": 8.17581425754468e-06,
-        "mean_rel": 2.6789443114570113e-06
-      },
-      "energy_balance.sunlit_Ci": {
-        "case": "022",
-        "max_abs": 0.025023084377551186,
-        "mean_abs": 0.02351625345005783,
-        "max_rel": 8.229885371994076e-05,
-        "mean_rel": 5.0104933057759196e-05
-      },
-      "energy_balance.shaded_Ci": {
-        "case": "070",
-        "max_abs": 0.04915907569454703,
-        "mean_abs": 0.013762109963354027,
-        "max_rel": 0.00012486213180701612,
-        "mean_rel": 1.5917469060975384e-05
-      },
-      "energy_balance.sunlit_rcw": {
-        "case": "029",
-        "max_abs": 23.13279967602557,
-        "mean_abs": 0.4286481899528825,
-        "max_rel": 0.007961398094898268,
-        "mean_rel": 0.00011444442204764414
-      },
-      "energy_balance.shaded_rcw": {
-        "case": "084",
-        "max_abs": 0.5156098712573112,
-        "mean_abs": 0.0162016357815754,
-        "max_rel": 0.0001365268502911341,
-        "mean_rel": 1.0981869725706974e-05
-      },
       "energy_balance.Tcu": {
         "case": "003",
         "max_abs": 2.858558476148687e-06,
@@ -63543,34 +63468,6 @@
         "mean_abs": 1.4210854715202004e-14,
         "max_rel": 3.1899145977046027e-15,
         "mean_rel": 3.1899145977046027e-15
-      },
-      "energy_balance.Rnuct": {
-        "case": "084",
-        "max_abs": 0.00024467876039580005,
-        "mean_abs": 0.0001090014641893807,
-        "max_rel": 0.0019035380233770394,
-        "mean_rel": 4.604265478849718e-05
-      },
-      "energy_balance.Rnhct": {
-        "case": "018",
-        "max_abs": 0.00013831651722284732,
-        "mean_abs": 5.961182657670779e-05,
-        "max_rel": 0.004054043565075328,
-        "mean_rel": 7.800933130096696e-05
-      },
-      "energy_balance.Rnuc": {
-        "case": "053",
-        "max_abs": 7.270075241194718e-05,
-        "mean_abs": 6.275554532058957e-05,
-        "max_rel": 0.0113859814887131,
-        "mean_rel": 0.00016952756772380877
-      },
-      "energy_balance.Rnhc": {
-        "case": "063",
-        "max_abs": 0.00020306161593452998,
-        "mean_abs": 0.00014506191553044699,
-        "max_rel": 0.004684960062929084,
-        "mean_rel": 0.00020025232709506975
       },
       "energy_balance.Rnus": {
         "case": "084",
@@ -63725,6 +63622,68 @@
         "mean_abs": 7.67236850884867e-07,
         "max_rel": 6.022558771153402e-06,
         "mean_rel": 6.022558771153402e-06
+      }
+    }
+  },
+  "absolute_policy_worst_cases": {
+    "max_abs": {
+      "energy_balance.Rnhc": {
+        "case": "074",
+        "max_abs": 0.00034655256560256475,
+        "mean_abs": 0.00023667906335115654,
+        "max_rel": 4.583089501706188e-05,
+        "mean_rel": 1.0021808910159951e-05
+      },
+      "energy_balance.Rnhct": {
+        "case": "074",
+        "max_abs": 0.0003465525655883539,
+        "mean_abs": 0.0002366790633459459,
+        "max_rel": 0.0012881649909918407,
+        "mean_rel": 5.3737986496859364e-05
+      },
+      "energy_balance.Rnuc": {
+        "case": "049",
+        "max_abs": 0.00044644005390637176,
+        "mean_abs": 0.00033497354161314574,
+        "max_rel": 3.7173836257257683e-06,
+        "mean_rel": 2.9851208884596255e-06
+      },
+      "energy_balance.Rnuct": {
+        "case": "049",
+        "max_abs": 0.00044644005390637176,
+        "mean_abs": 0.0003349735416113967,
+        "max_rel": 3.4358448675899804e-05,
+        "mean_rel": 9.580420557091872e-06
+      }
+    },
+    "max_rel": {
+      "energy_balance.Rnhc": {
+        "case": "063",
+        "max_abs": 0.00020306161593452998,
+        "mean_abs": 0.00014506191553044699,
+        "max_rel": 0.004684960062929084,
+        "mean_rel": 0.00020025232709506975
+      },
+      "energy_balance.Rnhct": {
+        "case": "018",
+        "max_abs": 0.00013831651722284732,
+        "mean_abs": 5.961182657670779e-05,
+        "max_rel": 0.004054043565075328,
+        "mean_rel": 7.800933130096696e-05
+      },
+      "energy_balance.Rnuc": {
+        "case": "053",
+        "max_abs": 7.270075241194718e-05,
+        "mean_abs": 6.275554532058957e-05,
+        "max_rel": 0.0113859814887131,
+        "mean_rel": 0.00016952756772380877
+      },
+      "energy_balance.Rnuct": {
+        "case": "084",
+        "max_abs": 0.00024467876039580005,
+        "mean_abs": 0.0001090014641893807,
+        "max_rel": 0.0019035380233770394,
+        "mean_rel": 4.604265478849718e-05
       }
     }
   },
@@ -64463,6 +64422,20 @@
       "worst_max_rel": 2.988457516007591e-12,
       "worst_mean_abs_from_max_abs_case": 3.4241615391070616e-15
     },
+    "leaf_iteration.sunlit_rcw": {
+      "worst_max_abs_case": "029",
+      "worst_max_abs": 7.554808689747006e-08,
+      "worst_max_rel_case": "029",
+      "worst_max_rel": 6.0858398575482656e-12,
+      "worst_mean_abs_from_max_abs_case": 1.9676375165216023e-09
+    },
+    "leaf_iteration.shaded_rcw": {
+      "worst_max_abs_case": "029",
+      "worst_max_abs": 9.797986422199756e-09,
+      "worst_max_rel_case": "029",
+      "worst_max_rel": 1.8034306652178844e-12,
+      "worst_mean_abs_from_max_abs_case": 2.942940603855371e-10
+    },
     "energy_iteration_input.sunlit_Cs": {
       "worst_max_abs_case": "003",
       "worst_max_abs": 0.024386099512298642,
@@ -64490,20 +64463,6 @@
       "worst_max_rel_case": "008",
       "worst_max_rel": 3.356476525949664e-15,
       "worst_mean_abs_from_max_abs_case": 7.53514897536768e-14
-    },
-    "energy_balance.Rnuct": {
-      "worst_max_abs_case": "049",
-      "worst_max_abs": 0.00044644005390637176,
-      "worst_max_rel_case": "084",
-      "worst_max_rel": 0.0019035380233770394,
-      "worst_mean_abs_from_max_abs_case": 0.0003349735416113967
-    },
-    "energy_balance.Rnhct": {
-      "worst_max_abs_case": "074",
-      "worst_max_abs": 0.0003465525655883539,
-      "worst_max_rel_case": "018",
-      "worst_max_rel": 0.004054043565075328,
-      "worst_mean_abs_from_max_abs_case": 0.0002366790633459459
     },
     "energy_balance.Rntot": {
       "worst_max_abs_case": "049",
@@ -64561,26 +64520,42 @@
       "worst_max_rel": 1.9058961456362767e-09,
       "worst_mean_abs_from_max_abs_case": 1.8539173529674713e-09
     },
-    "energy_balance.sunlit_rcw": {
-      "worst_max_abs_case": "029",
-      "worst_max_abs": 23.13279967602557,
-      "worst_max_rel_case": "029",
-      "worst_max_rel": 0.007961398094898268,
-      "worst_mean_abs_from_max_abs_case": 0.4286481899528825
-    },
-    "energy_balance.shaded_rcw": {
-      "worst_max_abs_case": "029",
-      "worst_max_abs": 0.5866411468059596,
-      "worst_max_rel_case": "084",
-      "worst_max_rel": 0.0001365268502911341,
-      "worst_mean_abs_from_max_abs_case": 0.03311287815454464
-    },
     "energy_balance.L": {
       "worst_max_abs_case": "072",
       "worst_max_abs": 0.10495106010864674,
       "worst_max_rel_case": "011",
       "worst_max_rel": 0.00019090459134927525,
       "worst_mean_abs_from_max_abs_case": 0.10495106010864674
+    }
+  },
+  "absolute_highlights": {
+    "energy_balance.Rnhc": {
+      "worst_max_abs_case": "074",
+      "worst_max_abs": 0.00034655256560256475,
+      "worst_max_rel_case": "063",
+      "worst_max_rel": 0.004684960062929084,
+      "worst_mean_abs_from_max_abs_case": 0.00023667906335115654
+    },
+    "energy_balance.Rnhct": {
+      "worst_max_abs_case": "074",
+      "worst_max_abs": 0.0003465525655883539,
+      "worst_max_rel_case": "018",
+      "worst_max_rel": 0.004054043565075328,
+      "worst_mean_abs_from_max_abs_case": 0.0002366790633459459
+    },
+    "energy_balance.Rnuc": {
+      "worst_max_abs_case": "049",
+      "worst_max_abs": 0.00044644005390637176,
+      "worst_max_rel_case": "053",
+      "worst_max_rel": 0.0113859814887131,
+      "worst_mean_abs_from_max_abs_case": 0.00033497354161314574
+    },
+    "energy_balance.Rnuct": {
+      "worst_max_abs_case": "049",
+      "worst_max_abs": 0.00044644005390637176,
+      "worst_max_rel_case": "084",
+      "worst_max_rel": 0.0019035380233770394,
+      "worst_mean_abs_from_max_abs_case": 0.0003349735416113967
     }
   }
 }

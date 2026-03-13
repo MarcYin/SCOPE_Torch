@@ -57,11 +57,7 @@ def _available_highlight_keys(
     summary: dict[str, dict[str, dict[str, Any]]],
     keys: list[str],
 ) -> list[str]:
-    return [
-        key
-        for key in keys
-        if key in summary["max_abs"] and key in summary["max_rel"]
-    ]
+    return _SCENE_SUITE._available_summary_keys(summary, keys)
 
 
 def _export_benchmarks(
@@ -193,14 +189,20 @@ def main() -> int:
         for step_id, status in step_status.items()
         if status and not status.get("energy_converged", True)
     }
-    parity_exclude = {
-        "energy_balance.sunlit_A",
-        "energy_balance.shaded_A",
-    }
+    parity_exclude = set(_SCENE_SUITE.RELATIVE_PARITY_EXCLUDE)
     parity_worst = _SCENE_SUITE._filtered_worst_cases(
         per_step,
         exclude=parity_exclude,
         nonconverged_energy_cases=nonconverged_energy_steps,
+    )
+    absolute_policy_source = _SCENE_SUITE._filtered_worst_cases(
+        per_step,
+        exclude=set(_SCENE_SUITE.PHASE_LAGGED_ENERGY_METRICS),
+        nonconverged_energy_cases=nonconverged_energy_steps,
+    )
+    absolute_policy_worst = _SCENE_SUITE._summary_subset(
+        absolute_policy_source,
+        sorted(_SCENE_SUITE.LOW_MAGNITUDE_ABSOLUTE_POLICY_METRICS),
     )
     stress_worst = _SCENE_SUITE._subset_worst_cases(
         per_step,
@@ -218,6 +220,10 @@ def main() -> int:
         "energy_balance.Tcu",
         "energy_balance.Tch",
     ]
+    absolute_highlights = _SCENE_SUITE._highlight(
+        absolute_policy_worst,
+        list(absolute_policy_worst["max_abs"]),
+    )
     summary = {
         "steps": [_step_id(step) for step in steps],
         "benchmark_dir": _SCENE_SUITE._stable_summary_path(benchmark_dir, repo_root),
@@ -226,13 +232,18 @@ def main() -> int:
         "nonconverged_energy_steps": sorted(nonconverged_energy_steps),
         "parity_policy": {
             "always_excluded_metrics": sorted(parity_exclude),
+            "phase_lagged_metric_replacements": _SCENE_SUITE.PHASE_LAGGED_METRIC_REPLACEMENTS,
+            "absolute_policy_metrics": sorted(_SCENE_SUITE.LOW_MAGNITUDE_ABSOLUTE_POLICY_METRICS),
+            "absolute_policy_rule": "Use max_abs rather than max_rel for low-magnitude canopy thermal component terms whose absolute errors stay negligible while relative errors are unstable.",
             "nonconverged_energy_metric_prefixes": list(NONCONVERGED_ENERGY_PREFIXES),
             "nonconverged_energy_step_rule": "Exclude energy-balance and energy-iteration parity metrics for upstream time-series steps that hit ebal max iterations; retain them as stress diagnostics.",
         },
         "worst_cases": worst,
         "parity_worst_cases": parity_worst,
+        "absolute_policy_worst_cases": absolute_policy_worst,
         "stress_worst_cases": stress_worst,
         "highlights": _SCENE_SUITE._highlight(parity_worst, _available_highlight_keys(parity_worst, highlight_keys)),
+        "absolute_highlights": absolute_highlights,
     }
 
     summary_json.parent.mkdir(parents=True, exist_ok=True)

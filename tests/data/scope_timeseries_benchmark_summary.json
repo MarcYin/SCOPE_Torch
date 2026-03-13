@@ -340,9 +340,36 @@
   ],
   "parity_policy": {
     "always_excluded_metrics": [
+      "energy_balance.Rnhc",
+      "energy_balance.Rnhct",
+      "energy_balance.Rnuc",
+      "energy_balance.Rnuct",
       "energy_balance.shaded_A",
-      "energy_balance.sunlit_A"
+      "energy_balance.shaded_Ci",
+      "energy_balance.shaded_eta",
+      "energy_balance.shaded_rcw",
+      "energy_balance.sunlit_A",
+      "energy_balance.sunlit_Ci",
+      "energy_balance.sunlit_eta",
+      "energy_balance.sunlit_rcw"
     ],
+    "phase_lagged_metric_replacements": {
+      "energy_balance.sunlit_A": "leaf_iteration.sunlit_A",
+      "energy_balance.shaded_A": "leaf_iteration.shaded_A",
+      "energy_balance.sunlit_Ci": "leaf_iteration.sunlit_Ci",
+      "energy_balance.shaded_Ci": "leaf_iteration.shaded_Ci",
+      "energy_balance.sunlit_eta": "leaf_iteration.sunlit_eta",
+      "energy_balance.shaded_eta": "leaf_iteration.shaded_eta",
+      "energy_balance.sunlit_rcw": "leaf_iteration.sunlit_rcw",
+      "energy_balance.shaded_rcw": "leaf_iteration.shaded_rcw"
+    },
+    "absolute_policy_metrics": [
+      "energy_balance.Rnhc",
+      "energy_balance.Rnhct",
+      "energy_balance.Rnuc",
+      "energy_balance.Rnuct"
+    ],
+    "absolute_policy_rule": "Use max_abs rather than max_rel for low-magnitude canopy thermal component terms whose absolute errors stay negligible while relative errors are unstable.",
     "nonconverged_energy_metric_prefixes": [
       "energy_balance.",
       "energy_iteration_input."
@@ -2100,48 +2127,6 @@
         "max_rel": 2.00094508131519e-12,
         "mean_rel": 1.5418026711407857e-13
       },
-      "energy_balance.sunlit_eta": {
-        "case": "007",
-        "max_abs": 9.709737410767971e-06,
-        "mean_abs": 2.573441619786137e-06,
-        "max_rel": 6.782739075084182e-06,
-        "mean_rel": 1.7419826314622284e-06
-      },
-      "energy_balance.shaded_eta": {
-        "case": "018",
-        "max_abs": 1.1718454293374592e-05,
-        "mean_abs": 4.970004965043628e-06,
-        "max_rel": 8.778639135025726e-06,
-        "mean_rel": 3.7928036457076248e-06
-      },
-      "energy_balance.sunlit_Ci": {
-        "case": "016",
-        "max_abs": 0.05946502068309201,
-        "mean_abs": 0.03676006497839108,
-        "max_rel": 1.1976142631431095e-05,
-        "mean_rel": 4.699105569344443e-06
-      },
-      "energy_balance.shaded_Ci": {
-        "case": "016",
-        "max_abs": 0.029873203182432917,
-        "mean_abs": 0.009159368811707772,
-        "max_rel": 6.057999823293277e-06,
-        "mean_rel": 1.0669068925112652e-06
-      },
-      "energy_balance.sunlit_rcw": {
-        "case": "005",
-        "max_abs": 0.06616715871314227,
-        "mean_abs": 0.01706832389815989,
-        "max_rel": 2.2876330884493124e-05,
-        "mean_rel": 5.8707100775875795e-06
-      },
-      "energy_balance.shaded_rcw": {
-        "case": "020",
-        "max_abs": 0.33828107153021847,
-        "mean_abs": 0.05551035032258262,
-        "max_rel": 7.585720811509731e-05,
-        "mean_rel": 3.8878472660359775e-05
-      },
       "energy_balance.Tcu": {
         "case": "003",
         "max_abs": 6.714460008439005e-05,
@@ -2197,34 +2182,6 @@
         "mean_abs": 1.1368683772161603e-13,
         "max_rel": 8.745706906589092e-16,
         "mean_rel": 8.745706906589092e-16
-      },
-      "energy_balance.Rnuct": {
-        "case": "003",
-        "max_abs": 0.0004318550352309103,
-        "mean_abs": 0.0002996889239309009,
-        "max_rel": 3.0444797468524534e-06,
-        "mean_rel": 2.4946081411192627e-06
-      },
-      "energy_balance.Rnhct": {
-        "case": "007",
-        "max_abs": 0.00035872151329385815,
-        "mean_abs": 0.0001063017217118402,
-        "max_rel": 3.842862124361002e-05,
-        "mean_rel": 3.500052027985541e-06
-      },
-      "energy_balance.Rnuc": {
-        "case": "003",
-        "max_abs": 0.0004318550353445971,
-        "mean_abs": 0.00029968892402922466,
-        "max_rel": 1.8572761882450894e-06,
-        "mean_rel": 1.3900853872462813e-06
-      },
-      "energy_balance.Rnhc": {
-        "case": "007",
-        "max_abs": 0.00035872151329385815,
-        "mean_abs": 0.00010630172171345796,
-        "max_rel": 4.417175053728768e-05,
-        "mean_rel": 1.439316711190855e-05
       },
       "energy_balance.Rnus": {
         "case": "013",
@@ -2767,48 +2724,6 @@
         "max_rel": 2.00094508131519e-12,
         "mean_rel": 1.5418026711407857e-13
       },
-      "energy_balance.sunlit_eta": {
-        "case": "003",
-        "max_abs": 9.633485631876937e-06,
-        "mean_abs": 8.399298482514755e-06,
-        "max_rel": 7.275138730765948e-06,
-        "mean_rel": 6.447552750127201e-06
-      },
-      "energy_balance.shaded_eta": {
-        "case": "018",
-        "max_abs": 1.1718454293374592e-05,
-        "mean_abs": 4.970004965043628e-06,
-        "max_rel": 8.778639135025726e-06,
-        "mean_rel": 3.7928036457076248e-06
-      },
-      "energy_balance.sunlit_Ci": {
-        "case": "025",
-        "max_abs": 0.0019426130158421984,
-        "mean_abs": 0.0016791863006334988,
-        "max_rel": 1.3022059463008495e-05,
-        "mean_rel": 1.1802724268089767e-05
-      },
-      "energy_balance.shaded_Ci": {
-        "case": "005",
-        "max_abs": 0.0223214194496677,
-        "mean_abs": 0.011207439886183527,
-        "max_rel": 5.937990505441423e-05,
-        "mean_rel": 3.665297473607557e-05
-      },
-      "energy_balance.sunlit_rcw": {
-        "case": "020",
-        "max_abs": 0.0074801598809131065,
-        "mean_abs": 0.0043092712069904325,
-        "max_rel": 2.970594538227234e-05,
-        "mean_rel": 2.7210772231274446e-05
-      },
-      "energy_balance.shaded_rcw": {
-        "case": "025",
-        "max_abs": 0.29266160427914656,
-        "mean_abs": 0.011934602152366835,
-        "max_rel": 8.475259446784232e-05,
-        "mean_rel": 1.0009732098383401e-05
-      },
       "energy_balance.Tcu": {
         "case": "011",
         "max_abs": 1.7510388745645145e-06,
@@ -2864,34 +2779,6 @@
         "mean_abs": 2.4424906541753444e-15,
         "max_rel": 1.2365187646262206e-15,
         "mean_rel": 1.2365187646262206e-15
-      },
-      "energy_balance.Rnuct": {
-        "case": "024",
-        "max_abs": 0.00024785859568510205,
-        "mean_abs": 0.00017727199128181326,
-        "max_rel": 0.00011313682001960194,
-        "mean_rel": 1.1760856278617982e-05
-      },
-      "energy_balance.Rnhct": {
-        "case": "014",
-        "max_abs": 0.0003316682748391031,
-        "mean_abs": 0.00013088275121766796,
-        "max_rel": 0.010705286557370781,
-        "mean_rel": 0.00018397090823951432
-      },
-      "energy_balance.Rnuc": {
-        "case": "011",
-        "max_abs": 1.032581241133812e-05,
-        "mean_abs": 3.636745569792158e-06,
-        "max_rel": 0.00018272744020455273,
-        "mean_rel": 3.992182258902842e-06
-      },
-      "energy_balance.Rnhc": {
-        "case": "025",
-        "max_abs": 4.439772486364291e-05,
-        "mean_abs": 5.13186810182642e-06,
-        "max_rel": 0.000530899618204127,
-        "mean_rel": 1.754811464470936e-05
       },
       "energy_balance.Rnus": {
         "case": "007",
@@ -3046,6 +2933,68 @@
         "mean_abs": 4.3690956694555916e-09,
         "max_rel": 3.047105184568901e-06,
         "mean_rel": 3.047105184568901e-06
+      }
+    }
+  },
+  "absolute_policy_worst_cases": {
+    "max_abs": {
+      "energy_balance.Rnhc": {
+        "case": "007",
+        "max_abs": 0.00035872151329385815,
+        "mean_abs": 0.00010630172171345796,
+        "max_rel": 4.417175053728768e-05,
+        "mean_rel": 1.439316711190855e-05
+      },
+      "energy_balance.Rnhct": {
+        "case": "007",
+        "max_abs": 0.00035872151329385815,
+        "mean_abs": 0.0001063017217118402,
+        "max_rel": 3.842862124361002e-05,
+        "mean_rel": 3.500052027985541e-06
+      },
+      "energy_balance.Rnuc": {
+        "case": "003",
+        "max_abs": 0.0004318550353445971,
+        "mean_abs": 0.00029968892402922466,
+        "max_rel": 1.8572761882450894e-06,
+        "mean_rel": 1.3900853872462813e-06
+      },
+      "energy_balance.Rnuct": {
+        "case": "003",
+        "max_abs": 0.0004318550352309103,
+        "mean_abs": 0.0002996889239309009,
+        "max_rel": 3.0444797468524534e-06,
+        "mean_rel": 2.4946081411192627e-06
+      }
+    },
+    "max_rel": {
+      "energy_balance.Rnhc": {
+        "case": "025",
+        "max_abs": 4.439772486364291e-05,
+        "mean_abs": 5.13186810182642e-06,
+        "max_rel": 0.000530899618204127,
+        "mean_rel": 1.754811464470936e-05
+      },
+      "energy_balance.Rnhct": {
+        "case": "014",
+        "max_abs": 0.0003316682748391031,
+        "mean_abs": 0.00013088275121766796,
+        "max_rel": 0.010705286557370781,
+        "mean_rel": 0.00018397090823951432
+      },
+      "energy_balance.Rnuc": {
+        "case": "011",
+        "max_abs": 1.032581241133812e-05,
+        "mean_abs": 3.636745569792158e-06,
+        "max_rel": 0.00018272744020455273,
+        "mean_rel": 3.992182258902842e-06
+      },
+      "energy_balance.Rnuct": {
+        "case": "024",
+        "max_abs": 0.00024785859568510205,
+        "mean_abs": 0.00017727199128181326,
+        "max_rel": 0.00011313682001960194,
+        "mean_rel": 1.1760856278617982e-05
       }
     }
   },
@@ -3783,6 +3732,36 @@
       "worst_max_rel_case": "011",
       "worst_max_rel": 0.0003434281059069764,
       "worst_mean_abs_from_max_abs_case": 2.3398439737215288e-05
+    }
+  },
+  "absolute_highlights": {
+    "energy_balance.Rnhc": {
+      "worst_max_abs_case": "007",
+      "worst_max_abs": 0.00035872151329385815,
+      "worst_max_rel_case": "025",
+      "worst_max_rel": 0.000530899618204127,
+      "worst_mean_abs_from_max_abs_case": 0.00010630172171345796
+    },
+    "energy_balance.Rnhct": {
+      "worst_max_abs_case": "007",
+      "worst_max_abs": 0.00035872151329385815,
+      "worst_max_rel_case": "014",
+      "worst_max_rel": 0.010705286557370781,
+      "worst_mean_abs_from_max_abs_case": 0.0001063017217118402
+    },
+    "energy_balance.Rnuc": {
+      "worst_max_abs_case": "003",
+      "worst_max_abs": 0.0004318550353445971,
+      "worst_max_rel_case": "011",
+      "worst_max_rel": 0.00018272744020455273,
+      "worst_mean_abs_from_max_abs_case": 0.00029968892402922466
+    },
+    "energy_balance.Rnuct": {
+      "worst_max_abs_case": "003",
+      "worst_max_abs": 0.0004318550352309103,
+      "worst_max_rel_case": "024",
+      "worst_max_rel": 0.00011313682001960194,
+      "worst_mean_abs_from_max_abs_case": 0.0002996889239309009
     }
   }
 }

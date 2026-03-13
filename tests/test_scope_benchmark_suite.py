@@ -19,6 +19,69 @@ def _metric(max_rel: float) -> dict[str, float]:
     return {"max_abs": max_rel, "mean_abs": max_rel / 2.0, "max_rel": max_rel, "mean_rel": max_rel / 2.0}
 
 
+def test_summary_subset_skips_missing_metrics():
+    module = _load_suite_module()
+    summary = {
+        "max_abs": {
+            "reflectance.refl": {"case": "001", **_metric(1e-6)},
+        },
+        "max_rel": {
+            "reflectance.refl": {"case": "001", **_metric(1e-6)},
+        },
+    }
+
+    subset = module._summary_subset(
+        summary,
+        ["reflectance.refl", "energy_balance.Rnhc"],
+    )
+
+    assert subset == {
+        "max_abs": {
+            "reflectance.refl": {"case": "001", **_metric(1e-6)},
+        },
+        "max_rel": {
+            "reflectance.refl": {"case": "001", **_metric(1e-6)},
+        },
+    }
+    assert module._highlight(subset, list(subset["max_abs"])) == {
+        "reflectance.refl": {
+            "worst_max_abs_case": "001",
+            "worst_max_abs": 1e-6,
+            "worst_max_rel_case": "001",
+            "worst_max_rel": 1e-6,
+            "worst_mean_abs_from_max_abs_case": 5e-7,
+        }
+    }
+
+
+def test_available_summary_keys_skip_missing_highlights():
+    module = _load_suite_module()
+    summary = {
+        "max_abs": {
+            "reflectance.refl": {"case": "042", **_metric(2e-6)},
+        },
+        "max_rel": {
+            "reflectance.refl": {"case": "042", **_metric(2e-6)},
+        },
+    }
+
+    keys = module._available_summary_keys(
+        summary,
+        ["reflectance.refl", "energy_iteration_input.sunlit_Cs"],
+    )
+
+    assert keys == ["reflectance.refl"]
+    assert module._highlight(summary, keys) == {
+        "reflectance.refl": {
+            "worst_max_abs_case": "042",
+            "worst_max_abs": 2e-6,
+            "worst_max_rel_case": "042",
+            "worst_max_rel": 2e-6,
+            "worst_mean_abs_from_max_abs_case": 1e-6,
+        }
+    }
+
+
 def test_filtered_worst_cases_excludes_nonconverged_energy_metrics_only():
     module = _load_suite_module()
 
