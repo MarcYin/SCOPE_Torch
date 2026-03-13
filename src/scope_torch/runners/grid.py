@@ -7,9 +7,23 @@ import torch
 import xarray as xr
 
 from ..biochem import BiochemicalOptions, LeafBiochemistryInputs, LeafBiochemistryResult
-from ..canopy.fluorescence import CanopyFluorescenceModel, CanopyFluorescenceResult
-from ..canopy.reflectance import CanopyReflectanceModel, CanopyReflectanceResult
-from ..canopy.thermal import CanopyThermalRadianceModel, CanopyThermalRadianceResult, ThermalOptics, default_thermal_wavelengths
+from ..canopy.fluorescence import (
+    CanopyDirectionalFluorescenceResult,
+    CanopyFluorescenceModel,
+    CanopyFluorescenceResult,
+)
+from ..canopy.reflectance import (
+    CanopyDirectionalReflectanceResult,
+    CanopyReflectanceModel,
+    CanopyReflectanceResult,
+)
+from ..canopy.thermal import (
+    CanopyDirectionalThermalResult,
+    CanopyThermalRadianceModel,
+    CanopyThermalRadianceResult,
+    ThermalOptics,
+    default_thermal_wavelengths,
+)
 from ..energy import (
     CanopyEnergyBalanceResult,
     CanopyEnergyBalanceModel,
@@ -160,6 +174,86 @@ class ScopeGridRunner:
             nlayers=nlayers,
         )
         return self._outputs_to_dataset(data_module, outputs, product="reflectance")
+
+    def run_directional_reflectance(
+        self,
+        data_module: ScopeGridDataModule,
+        *,
+        varmap: Mapping[str, str],
+        directional_tto: Optional[torch.Tensor] = None,
+        directional_psi: Optional[torch.Tensor] = None,
+        hotspot_var: Optional[str] = None,
+        nlayers: Optional[int] = None,
+    ) -> Dict[str, torch.Tensor]:
+        outputs: dict[str, list[torch.Tensor]] = {name: [] for name in ("refl_", "rso_")}
+        tto_angles, psi_angles = self._directional_angles(
+            data_module,
+            varmap=varmap,
+            directional_tto=directional_tto,
+            directional_psi=directional_psi,
+        )
+        for batch in data_module.iter_batches():
+            leaf_kwargs = self._leafbio_kwargs(batch, varmap)
+            leafbio = LeafBioBatch(**leaf_kwargs)
+            lai = batch[varmap["LAI"]]
+            tts = batch[varmap["tts"]]
+            soil = self._soil_refl(batch, varmap)
+            Esun = self._optical_directional_input(batch, varmap, "Esun")
+            Esky = self._optical_directional_input(batch, varmap, "Esky")
+            if hotspot_var and hotspot_var in batch:
+                hotspot = batch[hotspot_var]
+            else:
+                hotspot = torch.full_like(lai, self.default_hotspot)
+
+            result = self.reflectance_model.directional(
+                leafbio,
+                soil,
+                lai,
+                tts,
+                tto_angles,
+                psi_angles,
+                Esun,
+                Esky,
+                hotspot=hotspot,
+                nlayers=self._layer_count(nlayers, etau=None, etah=None, Tcu=None, Tch=None),
+            )
+            outputs["refl_"].append(result.refl_)
+            outputs["rso_"].append(result.rso_)
+
+        return {name: torch.cat(chunks, dim=0) for name, chunks in outputs.items()}
+
+    def run_directional_reflectance_dataset(
+        self,
+        data_module: ScopeGridDataModule,
+        *,
+        varmap: Mapping[str, str],
+        directional_tto: Optional[torch.Tensor] = None,
+        directional_psi: Optional[torch.Tensor] = None,
+        hotspot_var: Optional[str] = None,
+        nlayers: Optional[int] = None,
+    ) -> xr.Dataset:
+        tto_angles, psi_angles = self._directional_angles(
+            data_module,
+            varmap=varmap,
+            directional_tto=directional_tto,
+            directional_psi=directional_psi,
+        )
+        outputs = self.run_directional_reflectance(
+            data_module,
+            varmap=varmap,
+            directional_tto=tto_angles,
+            directional_psi=psi_angles,
+            hotspot_var=hotspot_var,
+            nlayers=nlayers,
+        )
+        return self._directional_outputs_to_dataset(
+            data_module,
+            outputs,
+            product="directional_reflectance",
+            directional_tto=tto_angles,
+            directional_psi=psi_angles,
+            variable_dims={"refl_": ("direction", "wavelength"), "rso_": ("direction", "wavelength")},
+        )
 
     def run_biochemical_fluorescence(
         self,
@@ -552,6 +646,89 @@ class ScopeGridRunner:
         )
         return self._outputs_to_dataset(data_module, outputs, product="fluorescence")
 
+    def run_directional_fluorescence(
+        self,
+        data_module: ScopeGridDataModule,
+        *,
+        varmap: Mapping[str, str],
+        directional_tto: Optional[torch.Tensor] = None,
+        directional_psi: Optional[torch.Tensor] = None,
+        hotspot_var: Optional[str] = None,
+        nlayers: Optional[int] = None,
+    ) -> Dict[str, torch.Tensor]:
+        outputs: dict[str, list[torch.Tensor]] = {name: [] for name in ("LoF_",)}
+        tto_angles, psi_angles = self._directional_angles(
+            data_module,
+            varmap=varmap,
+            directional_tto=directional_tto,
+            directional_psi=directional_psi,
+        )
+        for batch in data_module.iter_batches():
+            leaf_kwargs = self._leafbio_kwargs(batch, varmap)
+            leafbio = LeafBioBatch(**leaf_kwargs)
+            lai = batch[varmap["LAI"]]
+            tts = batch[varmap["tts"]]
+            soil = self._soil_refl(batch, varmap)
+            Esun = self._spectral_input(batch, varmap, "Esun_")
+            Esky = self._spectral_input(batch, varmap, "Esky_")
+            etau = batch[varmap["etau"]] if "etau" in varmap and varmap["etau"] in batch else None
+            etah = batch[varmap["etah"]] if "etah" in varmap and varmap["etah"] in batch else None
+            if hotspot_var and hotspot_var in batch:
+                hotspot = batch[hotspot_var]
+            else:
+                hotspot = torch.full_like(lai, self.default_hotspot)
+
+            result = self.fluorescence_model.directional(
+                leafbio,
+                soil,
+                lai,
+                tts,
+                tto_angles,
+                psi_angles,
+                Esun,
+                Esky,
+                etau=etau,
+                etah=etah,
+                hotspot=hotspot,
+                nlayers=self._layer_count(nlayers, etau=etau, etah=etah, Tcu=None, Tch=None),
+            )
+            outputs["LoF_"].append(result.LoF_)
+
+        return {name: torch.cat(chunks, dim=0) for name, chunks in outputs.items()}
+
+    def run_directional_fluorescence_dataset(
+        self,
+        data_module: ScopeGridDataModule,
+        *,
+        varmap: Mapping[str, str],
+        directional_tto: Optional[torch.Tensor] = None,
+        directional_psi: Optional[torch.Tensor] = None,
+        hotspot_var: Optional[str] = None,
+        nlayers: Optional[int] = None,
+    ) -> xr.Dataset:
+        tto_angles, psi_angles = self._directional_angles(
+            data_module,
+            varmap=varmap,
+            directional_tto=directional_tto,
+            directional_psi=directional_psi,
+        )
+        outputs = self.run_directional_fluorescence(
+            data_module,
+            varmap=varmap,
+            directional_tto=tto_angles,
+            directional_psi=psi_angles,
+            hotspot_var=hotspot_var,
+            nlayers=nlayers,
+        )
+        return self._directional_outputs_to_dataset(
+            data_module,
+            outputs,
+            product="directional_fluorescence",
+            directional_tto=tto_angles,
+            directional_psi=psi_angles,
+            variable_dims={"LoF_": ("direction", "fluorescence_wavelength")},
+        )
+
     def run_layered_fluorescence(
         self,
         data_module: ScopeGridDataModule,
@@ -675,6 +852,91 @@ class ScopeGridRunner:
         )
         return self._outputs_to_dataset(data_module, outputs, product="thermal")
 
+    def run_directional_thermal(
+        self,
+        data_module: ScopeGridDataModule,
+        *,
+        varmap: Mapping[str, str],
+        directional_tto: Optional[torch.Tensor] = None,
+        directional_psi: Optional[torch.Tensor] = None,
+        hotspot_var: Optional[str] = None,
+        nlayers: Optional[int] = None,
+    ) -> Dict[str, torch.Tensor]:
+        outputs: dict[str, list[torch.Tensor]] = {name: [] for name in ("Lot_", "BrightnessT")}
+        tto_angles, psi_angles = self._directional_angles(
+            data_module,
+            varmap=varmap,
+            directional_tto=directional_tto,
+            directional_psi=directional_psi,
+        )
+        for batch in data_module.iter_batches():
+            lai = batch[varmap["LAI"]]
+            tts = batch[varmap["tts"]]
+            Tcu = batch[varmap["Tcu"]]
+            Tch = batch[varmap["Tch"]]
+            Tsu = batch[varmap["Tsu"]]
+            Tsh = batch[varmap["Tsh"]]
+            if hotspot_var and hotspot_var in batch:
+                hotspot = batch[hotspot_var]
+            else:
+                hotspot = torch.full_like(lai, self.default_hotspot)
+            thermal_optics = ThermalOptics(
+                rho_thermal=batch[varmap["rho_thermal"]] if "rho_thermal" in varmap and varmap["rho_thermal"] in batch else 0.01,
+                tau_thermal=batch[varmap["tau_thermal"]] if "tau_thermal" in varmap and varmap["tau_thermal"] in batch else 0.01,
+                rs_thermal=batch[varmap["rs_thermal"]] if "rs_thermal" in varmap and varmap["rs_thermal"] in batch else 0.06,
+            )
+
+            result = self.thermal_model.directional(
+                lai,
+                tts,
+                tto_angles,
+                psi_angles,
+                Tcu,
+                Tch,
+                Tsu,
+                Tsh,
+                thermal_optics=thermal_optics,
+                hotspot=hotspot,
+                nlayers=self._layer_count(nlayers, etau=None, etah=None, Tcu=Tcu, Tch=Tch),
+            )
+            outputs["Lot_"].append(result.Lot_)
+            outputs["BrightnessT"].append(result.BrightnessT)
+
+        return {name: torch.cat(chunks, dim=0) for name, chunks in outputs.items()}
+
+    def run_directional_thermal_dataset(
+        self,
+        data_module: ScopeGridDataModule,
+        *,
+        varmap: Mapping[str, str],
+        directional_tto: Optional[torch.Tensor] = None,
+        directional_psi: Optional[torch.Tensor] = None,
+        hotspot_var: Optional[str] = None,
+        nlayers: Optional[int] = None,
+    ) -> xr.Dataset:
+        tto_angles, psi_angles = self._directional_angles(
+            data_module,
+            varmap=varmap,
+            directional_tto=directional_tto,
+            directional_psi=directional_psi,
+        )
+        outputs = self.run_directional_thermal(
+            data_module,
+            varmap=varmap,
+            directional_tto=tto_angles,
+            directional_psi=psi_angles,
+            hotspot_var=hotspot_var,
+            nlayers=nlayers,
+        )
+        return self._directional_outputs_to_dataset(
+            data_module,
+            outputs,
+            product="directional_thermal",
+            directional_tto=tto_angles,
+            directional_psi=psi_angles,
+            variable_dims={"Lot_": ("direction", "thermal_wavelength"), "BrightnessT": ("direction",)},
+        )
+
     def _outputs_to_dataset(
         self,
         data_module: ScopeGridDataModule,
@@ -695,6 +957,34 @@ class ScopeGridRunner:
             variable_coords=variable_coords,
             attrs={"scope_torch_product": product},
         )
+
+    def _directional_outputs_to_dataset(
+        self,
+        data_module: ScopeGridDataModule,
+        outputs: Mapping[str, torch.Tensor],
+        *,
+        product: str,
+        directional_tto: torch.Tensor,
+        directional_psi: torch.Tensor,
+        variable_dims: Mapping[str, Sequence[str]],
+    ) -> xr.Dataset:
+        variable_coords = self._output_coords(layer_count=None)
+        variable_coords["direction"] = torch.arange(
+            directional_tto.numel(),
+            device=self.fluspect.device,
+            dtype=self.fluspect.dtype,
+        )
+        dataset = data_module.assemble_dataset(
+            {name: torch.as_tensor(value) for name, value in outputs.items()},
+            variable_dims=variable_dims,
+            variable_coords=variable_coords,
+            attrs={"scope_torch_product": product},
+        )
+        dataset = dataset.assign_coords(
+            directional_tto=("direction", torch.as_tensor(directional_tto).detach().cpu().numpy()),
+            directional_psi=("direction", torch.as_tensor(directional_psi).detach().cpu().numpy()),
+        )
+        return dataset
 
     def _dataset_tensor(self, value: torch.Tensor) -> torch.Tensor:
         tensor = torch.as_tensor(value)
@@ -859,6 +1149,56 @@ class ScopeGridRunner:
         if key not in varmap or varmap[key] not in batch:
             raise KeyError(f"varmap must provide '{key}'")
         return batch[varmap[key]]
+
+    def _optical_directional_input(
+        self,
+        batch: Mapping[str, torch.Tensor],
+        varmap: Mapping[str, str],
+        kind: str,
+    ) -> torch.Tensor:
+        aliases = (f"{kind}_", f"{kind}_sw")
+        for key in aliases:
+            if key in varmap and varmap[key] in batch:
+                return batch[varmap[key]]
+        raise KeyError(f"varmap must provide one of {aliases!r} for directional reflectance runs")
+
+    def _directional_angles(
+        self,
+        data_module: ScopeGridDataModule,
+        *,
+        varmap: Mapping[str, str],
+        directional_tto: Optional[torch.Tensor],
+        directional_psi: Optional[torch.Tensor],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if directional_tto is not None or directional_psi is not None:
+            if directional_tto is None or directional_psi is None:
+                raise ValueError("Provide both directional_tto and directional_psi")
+            return self._directional_tensor(directional_tto), self._directional_tensor(directional_psi)
+
+        tto_name = varmap.get("directional_tto", "directional_tto")
+        psi_name = varmap.get("directional_psi", "directional_psi")
+        tto = self._directional_source_array(data_module, tto_name)
+        psi = self._directional_source_array(data_module, psi_name)
+        return self._directional_tensor(tto), self._directional_tensor(psi)
+
+    def _directional_source_array(self, data_module: ScopeGridDataModule, name: str):
+        if name in data_module.dataset.coords:
+            coord = data_module.dataset.coords[name]
+            if coord.ndim != 1:
+                raise ValueError(f"Directional coordinate '{name}' must be one-dimensional")
+            return coord.values
+        if name in data_module.dataset:
+            data = data_module.dataset[name]
+            if data.ndim != 1:
+                raise ValueError(f"Directional variable '{name}' must be one-dimensional")
+            return data.values
+        raise KeyError(f"Directional angles '{name}' were not provided and are not present on the dataset")
+
+    def _directional_tensor(self, value: torch.Tensor) -> torch.Tensor:
+        tensor = torch.as_tensor(value, device=self.fluspect.device, dtype=self.fluspect.dtype).reshape(-1)
+        if tensor.numel() == 0:
+            raise ValueError("Directional angle arrays must not be empty")
+        return tensor
 
     def _layer_count(
         self,

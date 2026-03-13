@@ -439,6 +439,11 @@ class CanopyReflectanceModel:
         Esun: torch.Tensor,
         Esky: torch.Tensor,
     ) -> torch.Tensor:
+        if rso.ndim == 3:
+            if Esun.ndim == 2:
+                Esun = Esun.unsqueeze(1)
+            if Esky.ndim == 2:
+                Esky = Esky.unsqueeze(1)
         irradiance = Esun + Esky
         refl = (rso * Esun + rdo * Esky) / irradiance.clamp(min=1e-12)
         threshold = 2e-4 * torch.max(Esky, dim=-1, keepdim=True).values
