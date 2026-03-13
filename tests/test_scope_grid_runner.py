@@ -177,6 +177,84 @@ def _run_execution_mode_workflow(
     raise ValueError(f"Unsupported workflow '{workflow}'")
 
 
+def _build_coupled_execution_mode_dataset(spectral: SpectralGrids) -> xr.Dataset:
+    times = pd.date_range("2020-07-01", periods=3, freq="h")
+    y = np.arange(1)
+    x = np.arange(1)
+    nwl = int(spectral.wlP.numel())
+    return xr.Dataset(
+        {
+            "Cab": (("y", "x", "time"), np.array([[[45.0, 41.0, 38.0]]])),
+            "Cw": (("y", "x", "time"), np.array([[[0.010, 0.012, 0.014]]])),
+            "Cdm": (("y", "x", "time"), np.array([[[0.012, 0.014, 0.016]]])),
+            "fqe": (("y", "x", "time"), np.array([[[0.010, 0.012, 0.014]]])),
+            "LAI": (("y", "x", "time"), np.array([[[2.3, 2.8, 3.2]]])),
+            "tts": (("y", "x", "time"), np.array([[[30.0, 33.0, 37.0]]])),
+            "tto": (("y", "x", "time"), np.array([[[15.0, 18.0, 22.0]]])),
+            "psi": (("y", "x", "time"), np.array([[[10.0, 20.0, 30.0]]])),
+            "soil_refl": (
+                ("y", "x", "time", "wavelength"),
+                np.linspace(0.18, 0.24, 3 * nwl, dtype=np.float64).reshape(1, 1, 3, nwl),
+            ),
+            "Esun_sw": (
+                ("y", "x", "time", "wavelength"),
+                np.linspace(1050.0, 1300.0, 3 * nwl, dtype=np.float64).reshape(1, 1, 3, nwl),
+            ),
+            "Esky_sw": (
+                ("y", "x", "time", "wavelength"),
+                np.linspace(140.0, 220.0, 3 * nwl, dtype=np.float64).reshape(1, 1, 3, nwl),
+            ),
+            "Ta": (("y", "x", "time"), np.array([[[25.0, 26.0, 27.0]]])),
+            "ea": (("y", "x", "time"), np.array([[[20.0, 20.8, 21.5]]])),
+            "Ca": (("y", "x", "time"), np.array([[[390.0, 397.0, 404.0]]])),
+            "Oa": (("y", "x", "time"), np.full((1, 1, 3), 209.0)),
+            "p": (("y", "x", "time"), np.array([[[970.0, 967.5, 965.0]]])),
+            "z": (("y", "x", "time"), np.full((1, 1, 3), 10.0)),
+            "u": (("y", "x", "time"), np.array([[[2.0, 2.6, 3.2]]])),
+            "Cd": (("y", "x", "time"), np.full((1, 1, 3), 0.2)),
+            "rwc": (("y", "x", "time"), np.full((1, 1, 3), 0.5)),
+            "z0m": (("y", "x", "time"), np.full((1, 1, 3), 0.15)),
+            "d": (("y", "x", "time"), np.full((1, 1, 3), 1.3)),
+            "h": (("y", "x", "time"), np.full((1, 1, 3), 2.0)),
+            "kV": (("y", "x", "time"), np.full((1, 1, 3), 0.15)),
+            "rss": (("y", "x", "time"), np.full((1, 1, 3), 120.0)),
+            "rbs": (("y", "x", "time"), np.full((1, 1, 3), 12.0)),
+            "Vcmax25": (("y", "x", "time"), np.array([[[70.0, 64.0, 58.0]]])),
+            "BallBerrySlope": (("y", "x", "time"), np.array([[[9.0, 8.25, 7.5]]])),
+        },
+        coords={
+            "y": y,
+            "x": x,
+            "time": times,
+            "wavelength": np.arange(nwl),
+        },
+        attrs={"site": "coupled-execution-mode"},
+    )
+
+
+def _run_coupled_execution_mode_workflow(
+    runner: ScopeGridRunner,
+    module: ScopeGridDataModule,
+    workflow: str,
+) -> dict[str, torch.Tensor]:
+    varmap = {name: name for name in module.dataset.data_vars}
+    if workflow == "energy_balance_fluorescence":
+        return runner.run_energy_balance_fluorescence(
+            module,
+            varmap=varmap,
+            energy_options=EnergyBalanceOptions(max_iter=50),
+            nlayers=4,
+        )
+    if workflow == "energy_balance_thermal":
+        return runner.run_energy_balance_thermal(
+            module,
+            varmap=varmap,
+            energy_options=EnergyBalanceOptions(max_iter=50),
+            nlayers=4,
+        )
+    raise ValueError(f"Unsupported coupled workflow '{workflow}'")
+
+
 def _assert_tensor_mapping_close(
     actual: dict[str, torch.Tensor],
     expected: dict[str, torch.Tensor],
@@ -190,6 +268,44 @@ def _assert_tensor_mapping_close(
         rhs = expected[name].detach().cpu()
         assert lhs.shape == rhs.shape, name
         assert torch.allclose(lhs, rhs, atol=atol, rtol=rtol), name
+
+
+def _assert_coupled_runner_outputs_close(
+    actual: dict[str, torch.Tensor],
+    expected: dict[str, torch.Tensor],
+    *,
+    radiative_keys: set[str],
+    atol: float,
+    rtol: float,
+) -> None:
+    stable_energy_keys = {
+        "Pnu_Cab",
+        "Pnh_Cab",
+        "Rnuc_sw",
+        "Rnhc_sw",
+        "Rnus_sw",
+        "Rnhs_sw",
+        "canopyemis",
+        "Csu",
+        "Csh",
+        "ebu",
+        "ebh",
+        "Tcu",
+        "Tch",
+        "Tsu",
+        "Tsh",
+        "L",
+        "converged",
+    }
+    compare_keys = radiative_keys | stable_energy_keys
+    assert compare_keys.issubset(actual)
+    assert compare_keys.issubset(expected)
+    _assert_tensor_mapping_close(
+        {name: actual[name] for name in sorted(compare_keys)},
+        {name: expected[name] for name in sorted(compare_keys)},
+        atol=atol,
+        rtol=rtol,
+    )
 
 
 def test_scope_grid_runner_matches_manual():
@@ -1529,6 +1645,32 @@ def test_scope_grid_runner_energy_balance_fluorescence_dataset_infers_layer_dims
     assert np.allclose(dataset_outputs["sunlit_Cs_input"].values, outputs["sunlit_Cs_input"].cpu().numpy().reshape(1, 1, 2, 4))
 
 
+def test_scope_grid_runner_energy_balance_thermal_dataset_preserves_stable_outputs():
+    runner, spectral = _build_execution_mode_runner(dtype=torch.float64)
+    dataset = _build_coupled_execution_mode_dataset(spectral)
+    module = _build_execution_mode_module(dataset, dtype=torch.float64, chunk_size=3)
+
+    outputs = runner.run_energy_balance_thermal(
+        module,
+        varmap={name: name for name in dataset.data_vars},
+        energy_options=EnergyBalanceOptions(max_iter=50),
+        nlayers=4,
+    )
+    dataset_outputs = runner.run_energy_balance_thermal_dataset(
+        module,
+        varmap={name: name for name in dataset.data_vars},
+        energy_options=EnergyBalanceOptions(max_iter=50),
+        nlayers=4,
+    )
+
+    assert dataset_outputs.attrs["site"] == "coupled-execution-mode"
+    assert dataset_outputs.attrs["scope_torch_product"] == "energy_balance_thermal"
+    assert dataset_outputs["Lot_"].dims == ("y", "x", "time", "thermal_wavelength")
+    assert dataset_outputs["Tcu"].dims == ("y", "x", "time", "layer")
+    assert np.allclose(dataset_outputs["Lot_"].values, outputs["Lot_"].cpu().numpy().reshape(1, 1, 3, -1))
+    assert np.allclose(dataset_outputs["Tcu"].values, outputs["Tcu"].cpu().numpy().reshape(1, 1, 3, -1))
+
+
 @pytest.mark.parametrize(
     ("workflow", "dtype", "atol", "rtol"),
     [
@@ -1576,3 +1718,67 @@ def test_scope_grid_runner_workflows_cpu_match_cuda(workflow, atol, rtol):
     cuda_outputs = _run_execution_mode_workflow(cuda_runner, cuda_module, workflow)
 
     _assert_tensor_mapping_close(cpu_outputs, cuda_outputs, atol=atol, rtol=rtol)
+
+
+@pytest.mark.parametrize(
+    ("workflow", "dtype", "atol", "rtol"),
+    [
+        ("energy_balance_fluorescence", torch.float32, 5e-5, 2e-4),
+        ("energy_balance_fluorescence", torch.float64, 1e-8, 1e-8),
+        ("energy_balance_thermal", torch.float32, 5e-5, 2e-4),
+        ("energy_balance_thermal", torch.float64, 1e-8, 1e-8),
+    ],
+)
+def test_scope_grid_runner_coupled_workflows_match_across_chunk_sizes(workflow, dtype, atol, rtol):
+    runner, spectral = _build_execution_mode_runner(dtype=dtype)
+    dataset = _build_coupled_execution_mode_dataset(spectral)
+    batched_module = _build_execution_mode_module(dataset, dtype=dtype, chunk_size=3)
+    single_module = _build_execution_mode_module(dataset, dtype=dtype, chunk_size=1)
+
+    batched = _run_coupled_execution_mode_workflow(runner, batched_module, workflow)
+    single = _run_coupled_execution_mode_workflow(runner, single_module, workflow)
+
+    radiative_keys = (
+        set(CanopyFluorescenceResult.__dataclass_fields__)
+        if workflow == "energy_balance_fluorescence"
+        else set(CanopyThermalRadianceResult.__dataclass_fields__)
+    )
+    _assert_coupled_runner_outputs_close(
+        batched,
+        single,
+        radiative_keys=radiative_keys,
+        atol=atol,
+        rtol=rtol,
+    )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is not available")
+@pytest.mark.parametrize(
+    ("workflow", "atol", "rtol"),
+    [
+        ("energy_balance_fluorescence", 5e-5, 2e-4),
+        ("energy_balance_thermal", 5e-5, 2e-4),
+    ],
+)
+def test_scope_grid_runner_coupled_workflows_cpu_match_cuda(workflow, atol, rtol):
+    cpu_runner, spectral = _build_execution_mode_runner(device="cpu", dtype=torch.float32)
+    dataset = _build_coupled_execution_mode_dataset(spectral)
+    cpu_module = _build_execution_mode_module(dataset, device="cpu", dtype=torch.float32, chunk_size=3)
+    cuda_runner, _ = _build_execution_mode_runner(device="cuda", dtype=torch.float32)
+    cuda_module = _build_execution_mode_module(dataset, device="cuda", dtype=torch.float32, chunk_size=3)
+
+    cpu_outputs = _run_coupled_execution_mode_workflow(cpu_runner, cpu_module, workflow)
+    cuda_outputs = _run_coupled_execution_mode_workflow(cuda_runner, cuda_module, workflow)
+
+    radiative_keys = (
+        set(CanopyFluorescenceResult.__dataclass_fields__)
+        if workflow == "energy_balance_fluorescence"
+        else set(CanopyThermalRadianceResult.__dataclass_fields__)
+    )
+    _assert_coupled_runner_outputs_close(
+        cpu_outputs,
+        cuda_outputs,
+        radiative_keys=radiative_keys,
+        atol=atol,
+        rtol=rtol,
+    )
