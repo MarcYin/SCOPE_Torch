@@ -20,7 +20,7 @@
 ### Still incomplete or narrow
 
 1. The default CI path covers the Python test suite and committed benchmark summaries, but it does not run MATLAB parity gates automatically.
-2. Device coverage is only partially institutionalized: standalone and coupled runner workflows now have batched-vs-single and dtype coverage, with optional CUDA mirrors on selected workflows, but there is still no broader dtype/device matrix across the lower-level kernels.
+2. Device coverage is substantially improved but still not exhaustive: standalone and coupled runner workflows now have batched-vs-single and dtype coverage, the lower-level kernel layer now has direct batch/dtype regression tests with optional CUDA mirrors, but mixed-dtype and broader backend coverage are still missing.
 3. Workflow parity is still narrow around downstream option coverage and any export targets beyond the current shared NetCDF writer.
 
 ### Main accuracy and scope gaps
@@ -31,8 +31,8 @@
    `scripts/export_scope_timeseries_benchmarks.m` and `scripts/run_scope_timeseries_benchmark_suite.py` now exercise upstream SCOPE `simulation == 1` on the default 30-step verification series, writing per-step reports under `tests/data/timeseries_benchmark_reports/` and an aggregate summary in `tests/data/scope_timeseries_benchmark_summary.json`. The same non-converged-upstream policy applies there: step `026` is currently classified as a stress case because upstream MATLAB `ebal` hits `maxit`.
 3. **The raw energy-balance iterate diagnostics are still easy to misread.**
    End-of-iteration same-state parity is now negligible, but the phase-lagged `energy_balance.sunlit_A` and `energy_balance.shaded_A` fields in the raw comparison reports still look worse than the true leaf-kernel parity because they compare the final leaf solve against post-update boundary states. The real parity contract is the committed suite summaries plus the exported `leaf_iteration.*` and same-state energy metrics. That distinction is now reflected in the suite policy, but it still needs broader user-facing documentation.
-4. **GPU and batched consistency are only partially institutionalized.**
-   The earlier CPU/detach hot spots are gone from the implemented kernels, there is now coupled energy/thermal batched-vs-single coverage, standalone and coupled runner batch-size/dtype coverage, and selected workflows have optional CPU-vs-GPU checks. Broader device and dtype coverage is still missing at the lower-level kernel layer.
+4. **GPU and batched consistency are now covered at both runner and kernel layers.**
+   The earlier CPU/detach hot spots are gone from the implemented kernels, there is now coupled energy/thermal batched-vs-single coverage, standalone and coupled runner batch-size/dtype coverage, direct lower-level kernel batch/dtype coverage, and selected workflows have optional CPU-vs-GPU checks. The remaining execution-mode gap is mixed-dtype or broader backend coverage rather than missing basic kernel/device regression tests.
 5. **Workflow exports are still narrower than the model core.**
    Input preparation, chunk-local batching, metadata-preserving `xarray` assembly, and NetCDF export are now implemented, but downstream format parity beyond NetCDF is not finished.
 6. **`mSCOPE` remains a future feature rather than an active implementation target.**
@@ -73,8 +73,8 @@ Completed:
 3. Added soil-library and BSM soil support.
 
 Remaining finish items:
-1. Extend the current consistency checks to more lower-level kernels across more dtype/device combinations.
-2. Add a small set of mixed-dtype smoke tests if GPU support is expected in day-to-day use.
+1. Add a small set of mixed-dtype smoke tests if GPU support is expected in day-to-day use.
+2. Add any broader backend checks only if non-CUDA accelerator support becomes a real requirement.
 
 ### Phase 1: SCOPE-facing reflectance core
 
@@ -152,9 +152,8 @@ Completed:
 6. Added opt-in self-hosted GPU and MATLAB parity jobs to the GitHub Actions workflow.
 
 Remaining finish items:
-1. Extend the execution matrix to more lower-level kernels.
-2. Decide whether the current opt-in self-hosted MATLAB lane should eventually become a required branch-protection signal.
-3. Add mixed-dtype or broader backend coverage if those execution modes are expected in production use.
+1. Decide whether the current opt-in self-hosted MATLAB lane should eventually become a required branch-protection signal.
+2. Add mixed-dtype or broader backend coverage if those execution modes are expected in production use.
 
 Exit criteria:
 1. Each implemented physics module has reference-backed regression tests in automated CI.
@@ -163,18 +162,18 @@ Exit criteria:
 
 ## 4. Suggested Next Step
 
-The next step should be **finish lower-level kernel execution coverage and close the remaining option-level workflow gaps**.
+The next step should be **close the remaining option-level workflow gaps and decide how strict the parity CI lane should become**.
 
 Recommended sequence:
 
-1. Add any missing lower-level dtype/device smoke tests that would catch kernel-specific regressions before they show up in the runners.
-2. Wire any remaining option-level switches, especially `calc_directional` / `calc_vert_profiles` style execution intent in prepared datasets, into whichever runner entry points will own those workflow decisions.
-3. Promote the same-state versus phase-lagged energy-diagnostic distinction into the docs and benchmark summaries so future parity regressions are easier to interpret.
-4. Decide whether the new self-hosted MATLAB parity lane should remain manual or become a required protected-branch signal.
+1. Wire any remaining option-level switches, especially `calc_directional` / `calc_vert_profiles` style execution intent in prepared datasets, into whichever runner entry points will own those workflow decisions.
+2. Promote the same-state versus phase-lagged energy-diagnostic distinction into the docs and benchmark summaries so future parity regressions are easier to interpret.
+3. Decide whether the new self-hosted MATLAB parity lane should remain manual or become a required protected-branch signal.
+4. Add mixed-dtype or broader backend coverage only if those execution modes are expected in production use.
 5. Keep `mSCOPE` as a deferred phase until there is a concrete workflow that requires vertically heterogeneous leaf optics.
 
 Why this should be next:
 
-1. The core model, ROI/time workflow, benchmark policy, NetCDF export surface, and runner execution-mode coverage are already in place, so the highest remaining risk is drift in lower-level kernel behavior rather than missing workflow features.
-2. The widened scene and time-series suites already constrain the physics stack tightly enough that the remaining execution-mode work can proceed safely.
-3. CI and committed summary tolerances now exist, which makes it practical to harden the remaining workflow surface without losing parity visibility.
+1. The core model, ROI/time workflow, benchmark policy, NetCDF export surface, and both runner-level and kernel-level execution coverage are already in place, so the highest remaining risk is option-surface drift rather than missing basic numerical hardening.
+2. The widened scene and time-series suites already constrain the physics stack tightly enough that the remaining workflow-surface work can proceed safely.
+3. CI and committed summary tolerances now exist, which makes it practical to harden the remaining option-level behavior without losing parity visibility.
