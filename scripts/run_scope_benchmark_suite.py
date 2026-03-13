@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_MATLAB = "/Applications/MATLAB_R2025b.app/bin/matlab"
+DEFAULT_MATLAB = os.environ.get("MATLAB_BIN", "/Applications/MATLAB_R2025b.app/bin/matlab")
 NONCONVERGED_ENERGY_PREFIXES = ("energy_balance.", "energy_iteration_input.")
 PHASE_LAGGED_ENERGY_METRICS = {
     "energy_balance.sunlit_A",

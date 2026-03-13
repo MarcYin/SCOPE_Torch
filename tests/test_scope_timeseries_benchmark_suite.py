@@ -110,3 +110,10 @@ def test_scene_suite_summary_subset_allows_empty_absolute_policy_subset():
 
     assert subset == {"max_abs": {}, "max_rel": {}}
     assert module._SCENE_SUITE._highlight(subset, list(subset["max_abs"])) == {}
+
+
+def test_default_matlab_honours_environment_override(monkeypatch):
+    monkeypatch.setenv("MATLAB_BIN", "/custom/matlab")
+    module = _load_suite_module()
+
+    assert module.DEFAULT_MATLAB == "/custom/matlab"

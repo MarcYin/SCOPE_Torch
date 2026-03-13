@@ -130,3 +130,10 @@ def test_subset_worst_cases_keeps_nonconverged_energy_metrics_as_stress_diagnost
     assert stress["max_rel"]["energy_balance.Rnuct"]["case"] == "042"
     assert stress["max_rel"]["energy_iteration_input.sunlit_Cs"]["case"] == "042"
     assert "reflectance.refl" not in stress["max_rel"]
+
+
+def test_default_matlab_honours_environment_override(monkeypatch):
+    monkeypatch.setenv("MATLAB_BIN", "/custom/matlab")
+    module = _load_suite_module()
+
+    assert module.DEFAULT_MATLAB == "/custom/matlab"
