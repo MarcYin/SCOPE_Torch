@@ -13,7 +13,7 @@
 | Canopy thermal RT | The repo includes spectral thermal radiance, spectrally integrated thermal balance outputs with shared layered transport, and explicit directional/profile APIs on the current homogeneous canopy stack. | [src/scope_torch/canopy/thermal.py](src/scope_torch/canopy/thermal.py), [tests/canopy/test_thermal.py](tests/canopy/test_thermal.py) |
 | Leaf biochemistry | `LeafBiochemistryModel` covers C3/C4 assimilation, Ball-Berry closure, and fluorescence-yield outputs used by the canopy models. | [src/scope_torch/biochem/leaf.py](src/scope_torch/biochem/leaf.py), [tests/biochem/test_leaf.py](tests/biochem/test_leaf.py) |
 | Energy balance closure | `CanopyEnergyBalanceModel` iterates temperatures, boundary humidity/CO2, aerodynamic resistances, and coupled fluorescence/thermal outputs. | [src/scope_torch/energy/balance.py](src/scope_torch/energy/balance.py), [tests/energy/test_balance.py](tests/energy/test_balance.py) |
-| Grid execution | `ScopeGridDataModule` now batches chunk-locally, and `ScopeGridRunner` exposes reflectance, fluorescence, biochemical fluorescence, thermal RT, and coupled energy-balance workflows over ROI/time batches. | [src/scope_torch/data/grid.py](src/scope_torch/data/grid.py), [src/scope_torch/runners/grid.py](src/scope_torch/runners/grid.py), [tests/test_grid_data_module.py](tests/test_grid_data_module.py), [tests/test_scope_grid_runner.py](tests/test_scope_grid_runner.py) |
+| Grid execution | `ScopeGridDataModule` now batches chunk-locally, and `ScopeGridRunner` exposes reflectance, directional reflectance, fluorescence, directional fluorescence, biochemical fluorescence, thermal RT, directional thermal, and coupled energy-balance workflows over ROI/time batches. | [src/scope_torch/data/grid.py](src/scope_torch/data/grid.py), [src/scope_torch/runners/grid.py](src/scope_torch/runners/grid.py), [tests/test_grid_data_module.py](tests/test_grid_data_module.py), [tests/test_scope_grid_runner.py](tests/test_scope_grid_runner.py) |
 | IO preparation | Input preparation has a reusable library surface in `scope_torch.io.prepare`, the old script is a thin CLI wrapper, and NetCDF export helpers now cover prepared and simulated `xarray` datasets. | [src/scope_torch/io/prepare.py](src/scope_torch/io/prepare.py), [src/scope_torch/io/export.py](src/scope_torch/io/export.py), [prepare_scope_input.py](prepare_scope_input.py), [tests/test_prepare_scope_input.py](tests/test_prepare_scope_input.py), [tests/test_netcdf_export.py](tests/test_netcdf_export.py) |
 | Regression automation | Committed benchmark summaries, opt-in MATLAB parity gates, and standard pytest automation are now present. | [tests/test_benchmark_summary_regression.py](tests/test_benchmark_summary_regression.py), [tests/test_scope_benchmark_parity.py](tests/test_scope_benchmark_parity.py), [tests/test_scope_timeseries_benchmark_parity.py](tests/test_scope_timeseries_benchmark_parity.py), [.github/workflows/tests.yml](.github/workflows/tests.yml) |
 
@@ -104,7 +104,7 @@ Completed:
 
 Remaining finish items:
 1. Add any extra exported RT diagnostics needed to isolate future widened-suite outliers faster.
-2. Decide whether directional/profile outputs should also be promoted through `ScopeGridRunner` and `xarray` assembly in the default workflow surface.
+2. Promote vertical-profile outputs through `ScopeGridRunner` and `xarray` assembly so the new profile APIs are available on the ROI/time workflow surface alongside the directional outputs.
 
 ### Phase 3: Biochemistry and energy balance
 
@@ -163,12 +163,12 @@ Exit criteria:
 
 ## 4. Suggested Next Step
 
-The next step should be **finish lower-level kernel execution coverage and decide whether directional/profile outputs need runner-level workflow support**.
+The next step should be **finish lower-level kernel execution coverage and promote vertical-profile outputs through the runner workflow surface**.
 
 Recommended sequence:
 
 1. Add any missing lower-level dtype/device smoke tests that would catch kernel-specific regressions before they show up in the runners.
-2. Decide whether the new directional/profile APIs should stay model-level or be wired into `ScopeGridRunner` and dataset export.
+2. Promote the remaining vertical-profile APIs into `ScopeGridRunner` and dataset export so `calc_vert_profiles` style workflows do not stop at the model layer.
 3. Promote the same-state versus phase-lagged energy-diagnostic distinction into the docs and benchmark summaries so future parity regressions are easier to interpret.
 4. Decide whether the new self-hosted MATLAB parity lane should remain manual or become a required protected-branch signal.
 5. Keep `mSCOPE` as a deferred phase until there is a concrete workflow that requires vertically heterogeneous leaf optics.
