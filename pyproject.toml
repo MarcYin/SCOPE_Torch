@@ -32,9 +32,15 @@ dependencies = [
     "pandas>=2.2"
 ]
 
+[project.urls]
+"Original MATLAB SCOPE" = "https://github.com/Christiaanvandertol/SCOPE"
+"Original SCOPE Manual" = "https://scope-model.readthedocs.io/en/master/"
+
 [project.scripts]
+scope = "scope.cli.main:main"
 scope-fetch-upstream = "scope.cli.fetch_upstream:main"
 scope-prepare = "scope.cli.prepare_scope_input:main"
+scope-run = "scope.cli.run:main"
 
 [project.optional-dependencies]
 dev = [

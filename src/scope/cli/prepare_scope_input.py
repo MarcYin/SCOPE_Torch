@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Sequence
 
 import xarray as xr
 
@@ -14,7 +15,7 @@ from ..io import (
 )
 
 
-def parse_args() -> argparse.Namespace:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Build a runner-ready SCOPE input dataset from weather, observation, and Sentinel-2 bio inputs."
     )
@@ -57,11 +58,14 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Disable NetCDF variable compression even when the selected backend supports it.",
     )
-    return parser.parse_args()
+    return parser
 
 
-def main() -> None:
-    args = parse_args()
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    return build_parser().parse_args(argv)
+
+
+def run(args: argparse.Namespace) -> None:
     weather_ds = xr.open_dataset(args.weather)
     observation_ds = xr.open_dataset(args.observation)
     reference_ds = xr.open_dataset(args.s2_reference) if args.s2_reference else None
@@ -94,6 +98,11 @@ def main() -> None:
             compression_level=args.compression_level,
         ),
     )
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    args = parse_args(argv)
+    run(args)
 
 
 if __name__ == "__main__":

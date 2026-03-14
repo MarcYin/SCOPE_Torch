@@ -3,13 +3,14 @@ from __future__ import annotations
 import argparse
 import subprocess
 from pathlib import Path
+from typing import Sequence
 
 
 DEFAULT_SCOPE_REPO = "https://github.com/Christiaanvandertol/SCOPE.git"
 DEFAULT_SCOPE_COMMIT = "e4c2e5109a309e6d2636fd6aa33e0e54b6dd88de"
 
 
-def parse_args() -> argparse.Namespace:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Fetch the pinned upstream MATLAB SCOPE repository required by asset-backed examples and parity workflows."
     )
@@ -28,7 +29,15 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_SCOPE_COMMIT,
         help="Pinned upstream SCOPE commit to fetch and check out.",
     )
-    return parser.parse_args()
+    return parser
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    return build_parser().parse_args(argv)
+
+
+def run(args: argparse.Namespace) -> Path:
+    return fetch_upstream_scope(args.dest, repo_url=args.repo_url, commit=args.commit)
 
 
 def fetch_upstream_scope(dest: str | Path, *, repo_url: str = DEFAULT_SCOPE_REPO, commit: str = DEFAULT_SCOPE_COMMIT) -> Path:
@@ -52,9 +61,9 @@ def fetch_upstream_scope(dest: str | Path, *, repo_url: str = DEFAULT_SCOPE_REPO
     return destination
 
 
-def main() -> None:
-    args = parse_args()
-    resolved = fetch_upstream_scope(args.dest, repo_url=args.repo_url, commit=args.commit)
+def main(argv: Sequence[str] | None = None) -> None:
+    args = parse_args(argv)
+    resolved = run(args)
     print(resolved.resolve())
 
 
