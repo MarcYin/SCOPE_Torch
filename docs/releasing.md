@@ -54,7 +54,7 @@ Recommended sequence:
 1. Ensure `main` is green.
 2. Optionally run a manual TestPyPI publish.
 3. Bump version in `pyproject.toml` and any release notes you maintain.
-4. Create and push a tag like `v0.1.0`.
+4. Create and push a tag like `v0.2.0`.
 5. Confirm the PyPI release and install path:
 
 ```bash
