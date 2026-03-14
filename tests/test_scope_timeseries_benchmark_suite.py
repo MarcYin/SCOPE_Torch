@@ -121,6 +121,15 @@ def test_default_matlab_honours_environment_override(monkeypatch):
     assert module.DEFAULT_MATLAB == "/custom/matlab"
 
 
+def test_discover_default_steps_falls_back_to_checked_in_fixture_dir(tmp_path):
+    module = _load_suite_module()
+    fixture = tmp_path / "tests" / "data" / "timeseries_benchmark_fixtures" / "scope_ts_step_001.mat"
+    fixture.parent.mkdir(parents=True, exist_ok=True)
+    fixture.write_bytes(b"fixture")
+
+    assert module._discover_default_steps(tmp_path) == [1]
+
+
 def test_skip_export_requires_existing_benchmark_dir(monkeypatch, tmp_path):
     module = _load_suite_module()
     missing_dir = tmp_path / "missing"

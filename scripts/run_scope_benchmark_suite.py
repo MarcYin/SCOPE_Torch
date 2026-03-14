@@ -80,9 +80,31 @@ def _parity_policy_metadata(
 
 def _discover_default_cases(repo_root: Path) -> list[int]:
     latin_hypercube = repo_root / "upstream" / "SCOPE" / "input" / "input_data_latin_hypercube.csv"
+    if not latin_hypercube.exists():
+        benchmark_dir = repo_root / "tests" / "data"
+        cases = _discover_fixture_ids(benchmark_dir, prefix="scope_case_")
+        if cases:
+            return cases
+        summary_json = repo_root / "tests" / "data" / "scope_benchmark_suite_summary.json"
+        if summary_json.exists():
+            return [int(case) for case in json.loads(summary_json.read_text(encoding="utf-8"))["cases"]]
+        raise FileNotFoundError(
+            f"Could not discover default cases: missing upstream Latin-hypercube file at {latin_hypercube}"
+        )
     with latin_hypercube.open(newline="", encoding="utf-8") as handle:
         max_cols = max(len(row) for row in csv.reader(handle))
     return list(range(1, max_cols))
+
+
+def _discover_fixture_ids(directory: Path, *, prefix: str) -> list[int]:
+    if not directory.exists():
+        return []
+    case_ids: list[int] = []
+    for path in sorted(directory.glob(f"{prefix}*.mat")):
+        suffix = path.stem[len(prefix) :]
+        if suffix.isdigit():
+            case_ids.append(int(suffix))
+    return case_ids
 
 
 def _case_id(case_index: int) -> str:
@@ -266,13 +288,12 @@ def _compare_benchmarks(
 
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
-    default_cases = _discover_default_cases(repo_root)
     parser = argparse.ArgumentParser(description="Export and compare multiple MATLAB SCOPE benchmark scenes.")
     parser.add_argument(
         "--cases",
         type=int,
         nargs="+",
-        default=default_cases,
+        default=None,
         help="Case indices to export and compare.",
     )
     parser.add_argument(
@@ -313,7 +334,7 @@ def main() -> int:
     benchmark_dir = args.benchmark_dir
     reports_dir = args.reports_dir if args.reports_dir.is_absolute() else repo_root / args.reports_dir
     summary_json = args.summary_json if args.summary_json.is_absolute() else repo_root / args.summary_json
-    cases = sorted(set(args.cases))
+    cases = sorted(set(args.cases if args.cases is not None else _discover_default_cases(repo_root)))
 
     if not args.skip_export:
         _export_benchmarks(

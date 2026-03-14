@@ -32,9 +32,31 @@ _SCENE_SUITE = _load_scene_suite_module()
 
 def _discover_default_steps(repo_root: Path) -> list[int]:
     dataset = repo_root / "upstream" / "SCOPE" / "input" / "dataset for_verification" / "input_data_latin_hypercube_ts.csv"
+    if not dataset.exists():
+        fixture_dir = repo_root / "tests" / "data" / "timeseries_benchmark_fixtures"
+        steps = _discover_fixture_steps(fixture_dir)
+        if steps:
+            return steps
+        summary_json = repo_root / "tests" / "data" / "scope_timeseries_benchmark_summary.json"
+        if summary_json.exists():
+            return [int(step) for step in json.loads(summary_json.read_text(encoding="utf-8"))["steps"]]
+        raise FileNotFoundError(
+            f"Could not discover default steps: missing upstream verification dataset at {dataset}"
+        )
     with dataset.open(newline="", encoding="utf-8") as handle:
         nrows = sum(1 for _ in csv.reader(handle)) - 1
     return list(range(1, nrows + 1))
+
+
+def _discover_fixture_steps(directory: Path) -> list[int]:
+    if not directory.exists():
+        return []
+    steps: list[int] = []
+    for path in sorted(directory.glob("scope_ts_step_*.mat")):
+        suffix = path.stem.split("_")[-1]
+        if suffix.isdigit():
+            steps.append(int(suffix))
+    return steps
 
 
 def _step_id(step_index: int) -> str:
@@ -125,13 +147,12 @@ def _compare_benchmarks(
 
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
-    default_steps = _discover_default_steps(repo_root)
     parser = argparse.ArgumentParser(description="Export and compare MATLAB SCOPE time-series timesteps.")
     parser.add_argument(
         "--steps",
         type=int,
         nargs="+",
-        default=default_steps,
+        default=None,
         help="Time-series step indices to export and compare.",
     )
     parser.add_argument(
@@ -172,7 +193,7 @@ def main() -> int:
     benchmark_dir = args.benchmark_dir
     reports_dir = args.reports_dir if args.reports_dir.is_absolute() else repo_root / args.reports_dir
     summary_json = args.summary_json if args.summary_json.is_absolute() else repo_root / args.summary_json
-    steps = sorted(set(args.steps))
+    steps = sorted(set(args.steps if args.steps is not None else _discover_default_steps(repo_root)))
 
     if not args.skip_export:
         _export_benchmarks(
