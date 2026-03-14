@@ -27,4 +27,5 @@ nav:
   - Input / Output Reference: input-output-reference.md
   - Examples: examples.md
   - Production Notes: production-notes.md
+  - Releasing: releasing.md
   - Benchmark Policy: benchmark-policy.md

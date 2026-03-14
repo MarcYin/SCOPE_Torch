@@ -19,9 +19,11 @@ Asset-backed constructors expect upstream SCOPE resources such as:
 
 The intended operational path is:
 
-1. fetch the pinned upstream checkout with `scope-fetch-upstream`
+1. fetch the pinned upstream checkout with `scope-fetch-upstream` or `scope fetch-upstream`
 2. keep that checkout version-controlled or provisioned by deployment automation
 3. pass `scope_root_path=...` explicitly if the checkout is not under `./upstream/SCOPE`
+
+For scientific or operational deployments, keep the attribution trail visible to users: this package is based on the original MATLAB SCOPE repository at [Christiaanvandertol/SCOPE](https://github.com/Christiaanvandertol/SCOPE), and the upstream manual lives at [scope-model.readthedocs.io](https://scope-model.readthedocs.io/en/master/).
 
 ## Benchmark and CI Strategy
 
@@ -43,7 +45,7 @@ The documentation surface is also treated as a build artifact:
 For maintainers, the repository now has separate operational paths for packaging and docs deployment:
 
 - `.github/workflows/release.yml`
-  Builds source and wheel distributions for `SCOPE-RTM`, runs `twine check`, auto-publishes to PyPI on version tags, and still supports manual TestPyPI or PyPI publishing through GitHub environments.
+  Builds source and wheel distributions for `SCOPE-RTM`, runs `twine check`, smoke-installs the built wheel, auto-publishes to PyPI on version tags, and still supports manual TestPyPI or PyPI publishing through GitHub environments.
 - `.github/workflows/docs.yml`
   Builds the MkDocs site and deploys it to GitHub Pages.
 
@@ -53,6 +55,15 @@ Local release verification uses:
 python -m pip install -e ".[release]"
 python -m build
 python -m twine check dist/*
+```
+
+The packaged wheel is also smoke-installed in CI and must satisfy:
+
+```bash
+scope --help
+scope-fetch-upstream --help
+scope-prepare --help
+scope-run --help
 ```
 
 ## Current Operational Tradeoffs

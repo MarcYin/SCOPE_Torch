@@ -28,6 +28,12 @@ The public Python import remains:
 import scope
 ```
 
+The top-level CLI is:
+
+```bash
+scope --help
+```
+
 Clone the repo and fetch the pinned upstream SCOPE checkout:
 
 ```bash
@@ -54,8 +60,10 @@ python -m pip install -e ".[docs]"
 If you want the installed command-line helpers:
 
 ```bash
+scope --help
 scope-fetch-upstream --help
 scope-prepare --help
+scope-run --help
 ```
 
 ## Runtime Asset Requirement

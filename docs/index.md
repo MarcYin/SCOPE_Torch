@@ -14,6 +14,16 @@ It is designed for users who need:
 - differentiable model components in PyTorch
 - reproducible MATLAB parity checks in local development and CI
 
+## Attribution
+
+`scope` is based on the original MATLAB SCOPE model by Christiaan van der Tol and collaborators:
+
+- upstream repository: [Christiaanvandertol/SCOPE](https://github.com/Christiaanvandertol/SCOPE)
+- upstream manual: [scope-model.readthedocs.io](https://scope-model.readthedocs.io/en/master/)
+- foundational papers:
+  - [Van der Tol et al. (2009)](https://doi.org/10.5194/bg-6-3109-2009)
+  - [Yang et al. (2021)](https://doi.org/10.5194/gmd-14-4697-2021)
+
 ## Start Here
 
 If this is your first time using the project:

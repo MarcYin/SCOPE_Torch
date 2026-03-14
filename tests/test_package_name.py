@@ -17,6 +17,7 @@ def test_distribution_name_is_scope_rtm() -> None:
     assert version("SCOPE-RTM") == scope.__version__
 
 
-def test_scope_torch_is_not_importable() -> None:
+def test_legacy_package_name_is_not_importable() -> None:
+    legacy_name = "scope" + "_torch"
     with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("scope_torch")
+        importlib.import_module(legacy_name)

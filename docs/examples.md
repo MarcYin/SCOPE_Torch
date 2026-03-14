@@ -58,12 +58,13 @@ What it demonstrates:
 Command:
 
 ```bash
-scope-prepare --help
+scope prepare --help
 ```
 
 Equivalent source-tree command:
 
 ```bash
+scope-prepare --help
 python prepare_scope_input.py --help
 ```
 
@@ -79,3 +80,18 @@ For application code, the most stable pattern is:
 4. Persist the result with `write_netcdf_dataset(...)`
 
 Use the example scripts as working templates rather than writing directly against low-level kernels unless you need custom research behavior.
+
+## 5. Shell Workflow
+
+For an installed shell workflow rather than Python example code:
+
+```bash
+scope prepare --help
+scope run --help
+```
+
+This is the shortest production-facing CLI path:
+
+1. build a prepared `xarray` dataset as NetCDF
+2. execute a named workflow from that dataset
+3. write the simulated output NetCDF and optional summary JSON

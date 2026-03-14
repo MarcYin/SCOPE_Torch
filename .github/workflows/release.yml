@@ -54,9 +54,41 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  smoke-install:
+    name: Smoke-install built wheel
+    needs: build-dist
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-dist
+          path: dist
+
+      - name: Install wheel
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install dist/*.whl
+
+      - name: Verify import and CLI
+        run: |
+          python -c "import scope; import importlib.metadata as md; assert scope.__version__ == md.version('SCOPE-RTM'); print(scope.__version__)"
+          scope --help
+          scope-fetch-upstream --help
+          scope-prepare --help
+          scope-run --help
+
   publish-testpypi:
     name: Publish to TestPyPI
-    needs: build-dist
+    needs: [build-dist, smoke-install]
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_target == 'testpypi' }}
     runs-on: ubuntu-latest
     permissions:
@@ -77,7 +109,7 @@ jobs:
 
   publish-pypi:
     name: Publish to PyPI
-    needs: build-dist
+    needs: [build-dist, smoke-install]
     if: ${{ (github.event_name == 'workflow_dispatch' && inputs.publish_target == 'pypi') || startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     permissions:

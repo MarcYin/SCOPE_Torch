@@ -12,6 +12,7 @@ python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
+scope --help
 ```
 
 ## 2. Run a Minimal Scene
@@ -79,7 +80,7 @@ Typical output:
 If you already have weather, observation, and Sentinel-2 bio inputs, build a runner-ready dataset with:
 
 ```bash
-scope-prepare \
+scope prepare \
   --weather weather.nc \
   --observation observation.nc \
   --bio-npz post_bio.npz \
@@ -87,13 +88,42 @@ scope-prepare \
   --output scope_inputs.nc
 ```
 
-The same helper is also available as:
+Equivalent direct entry points are:
 
 ```bash
+scope-prepare --help
 python prepare_scope_input.py --help
 ```
 
-## 5. What to Read Next
+## 5. Run the Prepared Dataset
+
+Once you have a prepared input dataset, run the installed workflow CLI:
+
+```bash
+scope run \
+  --input scope_inputs.nc \
+  --output scope_outputs.nc \
+  --scope-root ./upstream/SCOPE \
+  --workflow scope
+```
+
+For a reflectance-only run:
+
+```bash
+scope run \
+  --input scope_inputs.nc \
+  --output scope_reflectance.nc \
+  --scope-root ./upstream/SCOPE \
+  --workflow reflectance
+```
+
+Equivalent direct entry point:
+
+```bash
+scope-run --help
+```
+
+## 6. What to Read Next
 
 - [Model Mechanics](model-mechanics.md)
 - [Input / Output Reference](input-output-reference.md)

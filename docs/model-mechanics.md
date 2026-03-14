@@ -2,6 +2,8 @@
 
 This page explains how the current homogeneous-canopy `scope` stack is assembled.
 
+The implementation is based on the original MATLAB SCOPE model described by [Van der Tol et al. (2009)](https://doi.org/10.5194/bg-6-3109-2009) and [Yang et al. (2021)](https://doi.org/10.5194/gmd-14-4697-2021), with the upstream code and documentation available at [Christiaanvandertol/SCOPE](https://github.com/Christiaanvandertol/SCOPE) and [scope-model.readthedocs.io](https://scope-model.readthedocs.io/en/master/).
+
 ## Physical Stack
 
 At a high level, the model is organized as:
