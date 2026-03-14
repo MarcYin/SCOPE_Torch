@@ -1,4 +1,4 @@
-# SCOPE Torch Implementation Plan
+# SCOPE Implementation Plan
 
 ## 1. Current Repository Status
 
@@ -6,15 +6,16 @@
 
 | Area | Current implementation | Evidence |
 | --- | --- | --- |
-| Upstream asset loading | Real SCOPE optical assets, soil spectra, and SCOPE filename metadata can be loaded from the vendored upstream tree. | [src/scope_torch/spectral/loaders.py](src/scope_torch/spectral/loaders.py), [tests/spectral/test_loaders.py](tests/spectral/test_loaders.py) |
-| Leaf optics | `FluspectModel` ports the leaf optics core, including fluorescence matrices `Mb`/`Mf`, and now stays tensor-native instead of detaching to SciPy. | [src/scope_torch/spectral/fluspect.py](src/scope_torch/spectral/fluspect.py), [tests/spectral/test_fluspect.py](tests/spectral/test_fluspect.py) |
-| Canopy reflectance | `FourSAILModel` and `CanopyReflectanceModel` provide a SCOPE-facing reflectance stack with full reflectance outputs plus soil-library and BSM soil support. | [src/scope_torch/canopy/foursail.py](src/scope_torch/canopy/foursail.py), [src/scope_torch/canopy/reflectance.py](src/scope_torch/canopy/reflectance.py), [tests/canopy/test_foursail.py](tests/canopy/test_foursail.py), [tests/spectral/test_soil.py](tests/spectral/test_soil.py) |
-| Canopy fluorescence | The repo includes one-pass fluorescence, layered fluorescence transport, a physiology-coupled layered fluorescence path, and explicit directional/profile APIs on the current homogeneous canopy stack. | [src/scope_torch/canopy/fluorescence.py](src/scope_torch/canopy/fluorescence.py), [tests/canopy/test_fluorescence.py](tests/canopy/test_fluorescence.py) |
-| Canopy thermal RT | The repo includes spectral thermal radiance, spectrally integrated thermal balance outputs with shared layered transport, and explicit directional/profile APIs on the current homogeneous canopy stack. | [src/scope_torch/canopy/thermal.py](src/scope_torch/canopy/thermal.py), [tests/canopy/test_thermal.py](tests/canopy/test_thermal.py) |
-| Leaf biochemistry | `LeafBiochemistryModel` covers C3/C4 assimilation, Ball-Berry closure, and fluorescence-yield outputs used by the canopy models. | [src/scope_torch/biochem/leaf.py](src/scope_torch/biochem/leaf.py), [tests/biochem/test_leaf.py](tests/biochem/test_leaf.py) |
-| Energy balance closure | `CanopyEnergyBalanceModel` iterates temperatures, boundary humidity/CO2, aerodynamic resistances, and coupled fluorescence/thermal outputs. | [src/scope_torch/energy/balance.py](src/scope_torch/energy/balance.py), [tests/energy/test_balance.py](tests/energy/test_balance.py) |
-| Grid execution | `ScopeGridDataModule` now batches chunk-locally, and `ScopeGridRunner` exposes reflectance, reflectance profiles, directional reflectance, fluorescence, fluorescence profiles, directional fluorescence, biochemical fluorescence, thermal RT, thermal profiles, directional thermal, and coupled energy-balance workflows over ROI/time batches. | [src/scope_torch/data/grid.py](src/scope_torch/data/grid.py), [src/scope_torch/runners/grid.py](src/scope_torch/runners/grid.py), [tests/test_grid_data_module.py](tests/test_grid_data_module.py), [tests/test_scope_grid_runner.py](tests/test_scope_grid_runner.py) |
-| IO preparation | Input preparation has a reusable library surface in `scope_torch.io.prepare`, the old script is a thin CLI wrapper, and NetCDF export helpers now cover prepared and simulated `xarray` datasets. | [src/scope_torch/io/prepare.py](src/scope_torch/io/prepare.py), [src/scope_torch/io/export.py](src/scope_torch/io/export.py), [prepare_scope_input.py](prepare_scope_input.py), [tests/test_prepare_scope_input.py](tests/test_prepare_scope_input.py), [tests/test_netcdf_export.py](tests/test_netcdf_export.py) |
+| Upstream asset loading | Real SCOPE optical assets, soil spectra, and SCOPE filename metadata can be loaded from the vendored upstream tree. | [src/scope/spectral/loaders.py](src/scope/spectral/loaders.py), [tests/spectral/test_loaders.py](tests/spectral/test_loaders.py) |
+| Leaf optics | `FluspectModel` ports the leaf optics core, including fluorescence matrices `Mb`/`Mf`, and now stays tensor-native instead of detaching to SciPy. | [src/scope/spectral/fluspect.py](src/scope/spectral/fluspect.py), [tests/spectral/test_fluspect.py](tests/spectral/test_fluspect.py) |
+| Canopy reflectance | `FourSAILModel` and `CanopyReflectanceModel` provide a SCOPE-facing reflectance stack with full reflectance outputs plus soil-library and BSM soil support. | [src/scope/canopy/foursail.py](src/scope/canopy/foursail.py), [src/scope/canopy/reflectance.py](src/scope/canopy/reflectance.py), [tests/canopy/test_foursail.py](tests/canopy/test_foursail.py), [tests/spectral/test_soil.py](tests/spectral/test_soil.py) |
+| Canopy fluorescence | The repo includes one-pass fluorescence, layered fluorescence transport, a physiology-coupled layered fluorescence path, and explicit directional/profile APIs on the current homogeneous canopy stack. | [src/scope/canopy/fluorescence.py](src/scope/canopy/fluorescence.py), [tests/canopy/test_fluorescence.py](tests/canopy/test_fluorescence.py) |
+| Canopy thermal RT | The repo includes spectral thermal radiance, spectrally integrated thermal balance outputs with shared layered transport, and explicit directional/profile APIs on the current homogeneous canopy stack. | [src/scope/canopy/thermal.py](src/scope/canopy/thermal.py), [tests/canopy/test_thermal.py](tests/canopy/test_thermal.py) |
+| Leaf biochemistry | `LeafBiochemistryModel` covers C3/C4 assimilation, Ball-Berry closure, and fluorescence-yield outputs used by the canopy models. | [src/scope/biochem/leaf.py](src/scope/biochem/leaf.py), [tests/biochem/test_leaf.py](tests/biochem/test_leaf.py) |
+| Energy balance closure | `CanopyEnergyBalanceModel` iterates temperatures, boundary humidity/CO2, aerodynamic resistances, and coupled fluorescence/thermal outputs. | [src/scope/energy/balance.py](src/scope/energy/balance.py), [tests/energy/test_balance.py](tests/energy/test_balance.py) |
+| Grid execution | `ScopeGridDataModule` now batches chunk-locally, and `ScopeGridRunner` exposes reflectance, reflectance profiles, directional reflectance, fluorescence, fluorescence profiles, directional fluorescence, biochemical fluorescence, thermal RT, thermal profiles, directional thermal, and coupled energy-balance workflows over ROI/time batches. | [src/scope/data/grid.py](src/scope/data/grid.py), [src/scope/runners/grid.py](src/scope/runners/grid.py), [tests/test_grid_data_module.py](tests/test_grid_data_module.py), [tests/test_scope_grid_runner.py](tests/test_scope_grid_runner.py) |
+| IO preparation | Input preparation has a reusable library surface in `scope.io.prepare`, the old script is a thin CLI wrapper, and NetCDF export helpers now cover prepared and simulated `xarray` datasets. | [src/scope/io/prepare.py](src/scope/io/prepare.py), [src/scope/io/export.py](src/scope/io/export.py), [prepare_scope_input.py](prepare_scope_input.py), [tests/test_prepare_scope_input.py](tests/test_prepare_scope_input.py), [tests/test_netcdf_export.py](tests/test_netcdf_export.py) |
+| Production usage surface | The package now has a real user-facing docs site, runnable examples, an installed `scope` CLI, a shell-level `scope run` path, and smoke-tested release workflows for `SCOPE-RTM`. | [README.md](README.md), [docs/index.md](docs/index.md), [docs/quickstart.md](docs/quickstart.md), [src/scope/cli/main.py](src/scope/cli/main.py), [src/scope/cli/run.py](src/scope/cli/run.py), [.github/workflows/release.yml](.github/workflows/release.yml) |
 | Regression automation | Committed benchmark summaries, live-or-pregenerated MATLAB parity tests, and standard pytest automation are now present. | [tests/test_benchmark_summary_regression.py](tests/test_benchmark_summary_regression.py), [tests/test_scope_benchmark_parity.py](tests/test_scope_benchmark_parity.py), [tests/test_scope_timeseries_benchmark_parity.py](tests/test_scope_timeseries_benchmark_parity.py), [.github/workflows/tests.yml](.github/workflows/tests.yml) |
 
 ### Still incomplete or narrow
@@ -43,17 +44,17 @@
 
 ### Core packages
 
-1. `scope_torch.spectral`
+1. `scope.spectral`
    Real upstream optical assets, leaf optics, wavelength grids, and soil optics.
-2. `scope_torch.canopy`
+2. `scope.canopy`
    Reflectance, fluorescence, and thermal canopy transport on a shared geometry backbone.
-3. `scope_torch.biochem`
+3. `scope.biochem`
    Leaf physiology and fluorescence-yield drivers.
-4. `scope_torch.energy`
+4. `scope.energy`
    Aerodynamic resistances, heat fluxes, soil heat treatment, and coupled energy balance closure.
-5. `scope_torch.runners`
+5. `scope.runners`
    Scene and ROI/time entry points over the tensor model core.
-6. `scope_torch.io`
+6. `scope.io`
    Output assembly back to `xarray` plus file exports.
 
 ### Data model principles
@@ -125,12 +126,15 @@ Remaining finish items:
 
 ### Phase 4: Production grid and IO workflow
 
-Status: substantially complete.
+Status: substantially complete and now shell-usable.
 
 Completed:
 1. Refactored `prepare_scope_input.py` into reusable library functions with configurable inputs and a thin CLI wrapper.
 2. Made `ScopeGridDataModule` chunk-local so it no longer materializes one tensor map before batching.
 3. Extended `ScopeGridRunner` to preserve metadata and assemble results back into `xarray.Dataset`s for the main workflows.
+4. Added installed production-facing CLI entry points for asset fetch, input preparation, and prepared-dataset execution.
+5. Added production docs, quickstart guides, runnable examples, and release/docs workflows.
+6. Hardened the SciPy NetCDF fallback path so runner-style datasets round-trip safely without invalid unlimited-dimension usage.
 
 Remaining finish items:
 1. Add any remaining higher-level pipeline wrappers needed to call the now-implemented option-driven runner surface consistently.
@@ -164,18 +168,19 @@ Exit criteria:
 
 ## 4. Suggested Next Step
 
-The next step should be **decide how to operationalize the parity infrastructure now that the core model is effectively closed**.
+The next step should be **decide how to operationalize the release and benchmark infrastructure now that the core model and user-facing shell workflow are in place**.
 
 Recommended sequence:
 
 1. Decide whether the checked-in `tests/data/timeseries_benchmark_fixtures/` set should stay in the repo, move to Git LFS, or be replaced by an external artifact/cache strategy. That is now the highest-cost maintenance choice.
 2. Decide whether the self-hosted live-MATLAB lane should remain manual or become a required protected-branch signal once the infrastructure is reliable enough.
-3. Add mixed-dtype coverage only if `float32`/`float64` interoperability is expected in production workflows; otherwise keep the current execution matrix stable.
-4. Add any remaining downstream-specific wrappers around `run_scope_dataset(...)` only if a real consumer needs a thinner application-facing API.
-5. Keep `mSCOPE` as a deferred phase until there is a concrete workflow that requires vertically heterogeneous leaf optics.
+3. Decide whether docs deployment and package publishing should stay tag/manual-trigger based or move to stricter protected-release automation.
+4. Add mixed-dtype coverage only if `float32`/`float64` interoperability is expected in production workflows; otherwise keep the current execution matrix stable.
+5. Add any remaining downstream-specific wrappers around `run_scope_dataset(...)` only if a real consumer needs a thinner application-facing API.
+6. Keep `mSCOPE` as a deferred phase until there is a concrete workflow that requires vertically heterogeneous leaf optics.
 
 Why this should be next:
 
-1. The physics stack, ROI/time workflow, benchmark policy, and runner/kernel coverage are already in place, so the remaining risk is mostly operational rather than numerical.
-2. The benchmark infrastructure now works on both hosted and self-hosted runners, which shifts the main open questions to storage cost, CI policy, and consumer-facing ergonomics.
-3. Further feature work is lower leverage than making the parity infrastructure easier to maintain and cheaper to run.
+1. The physics stack, ROI/time workflow, benchmark policy, installed CLI, docs site, and release workflows are already in place, so the remaining risk is mostly operational rather than numerical.
+2. The benchmark infrastructure now works on both hosted and self-hosted runners, which shifts the main open questions to storage cost, CI policy, release policy, and long-term maintenance.
+3. Further feature work is lower leverage than making the release and parity infrastructure easier to maintain and cheaper to run.
