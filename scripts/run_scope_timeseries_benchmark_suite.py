@@ -162,6 +162,11 @@ def main() -> int:
         default="cpu",
         help="Torch device to use for the Python comparison runs.",
     )
+    parser.add_argument(
+        "--skip-export",
+        action="store_true",
+        help="Skip MATLAB export and compare against existing benchmark MAT fixtures in --benchmark-dir.",
+    )
     args = parser.parse_args()
 
     benchmark_dir = args.benchmark_dir
@@ -169,12 +174,15 @@ def main() -> int:
     summary_json = args.summary_json if args.summary_json.is_absolute() else repo_root / args.summary_json
     steps = sorted(set(args.steps))
 
-    _export_benchmarks(
-        matlab=args.matlab,
-        repo_root=repo_root,
-        benchmark_dir=benchmark_dir,
-        steps=steps,
-    )
+    if not args.skip_export:
+        _export_benchmarks(
+            matlab=args.matlab,
+            repo_root=repo_root,
+            benchmark_dir=benchmark_dir,
+            steps=steps,
+        )
+    elif not benchmark_dir.exists():
+        raise FileNotFoundError(f"Benchmark directory does not exist for --skip-export: {benchmark_dir}")
     per_step, step_status = _compare_benchmarks(
         repo_root=repo_root,
         benchmark_dir=benchmark_dir,

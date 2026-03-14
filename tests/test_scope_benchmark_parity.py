@@ -1,43 +1,31 @@
 from __future__ import annotations
 
-import json
-import os
 import subprocess
-import sys
-from pathlib import Path
 
-import pytest
+from tests._matlab_benchmark_helpers import REPO_ROOT, compare_benchmark_fixture, has_live_matlab, matlab_bin
 
 
 def test_scope_benchmark_locked_subsystems(tmp_path):
-    if os.environ.get("SCOPE_BENCHMARK") != "1":
-        pytest.skip("Set SCOPE_BENCHMARK=1 to run the MATLAB/Python benchmark parity check.")
-
-    repo_root = Path(__file__).resolve().parents[1]
-    benchmark = repo_root / "tests" / "data" / "scope_case_001.mat"
-    if not benchmark.exists():
-        pytest.skip(f"Benchmark fixture not found: {benchmark}")
+    benchmark = REPO_ROOT / "tests" / "data" / "scope_case_001.mat"
+    if has_live_matlab():
+        benchmark = tmp_path / "scope_case_001.live.mat"
+        scripts_path = str(REPO_ROOT / "scripts").replace("'", "''")
+        benchmark_path = str(benchmark).replace("'", "''")
+        subprocess.run(
+            [
+                matlab_bin(),
+                "-batch",
+                f"addpath('{scripts_path}'); export_scope_benchmark('{benchmark_path}', 1)",
+            ],
+            check=True,
+            cwd=REPO_ROOT,
+            stdout=subprocess.DEVNULL,
+        )
+    else:
+        assert benchmark.exists(), f"Pregenerated benchmark fixture not found: {benchmark}"
 
     report_path = tmp_path / "scope_case_001_report.test.json"
-    env = os.environ.copy()
-    pythonpath = env.get("PYTHONPATH")
-    env["PYTHONPATH"] = "src" if not pythonpath else f"src{os.pathsep}{pythonpath}"
-
-    subprocess.run(
-        [
-            sys.executable,
-            str(repo_root / "scripts" / "compare_scope_benchmark.py"),
-            "--benchmark",
-            str(benchmark),
-            "--report-json",
-            str(report_path),
-        ],
-        check=True,
-        cwd=repo_root,
-        env=env,
-    )
-
-    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report = compare_benchmark_fixture(benchmark, report_path)
     status = report["benchmark_status"]
     assert status["energy_converged"] is True
     assert status["energy_hit_max_iterations"] is False

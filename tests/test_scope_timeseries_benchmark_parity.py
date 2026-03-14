@@ -1,37 +1,45 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
-from pathlib import Path
 
-import pytest
+from tests._matlab_benchmark_helpers import REPO_ROOT, TEST_DATA_DIR, has_live_matlab, matlab_bin, python_test_env
 
 
 def test_scope_timeseries_benchmark_locked_subsystems(tmp_path):
-    if os.environ.get("SCOPE_TIMESERIES_BENCHMARK") != "1":
-        pytest.skip("Set SCOPE_TIMESERIES_BENCHMARK=1 to run the MATLAB/Python time-series benchmark parity check.")
-
-    repo_root = Path(__file__).resolve().parents[1]
     report_dir = tmp_path / "timeseries_reports"
     summary_path = tmp_path / "scope_timeseries_summary.json"
-    env = os.environ.copy()
-    pythonpath = env.get("PYTHONPATH")
-    env["PYTHONPATH"] = "src" if not pythonpath else f"src{os.pathsep}{pythonpath}"
-
-    subprocess.run(
-        [
-            sys.executable,
-            str(repo_root / "scripts" / "run_scope_timeseries_benchmark_suite.py"),
+    fixture_dir = TEST_DATA_DIR / "timeseries_benchmark_fixtures"
+    command = [
+        str(REPO_ROOT / "scripts" / "run_scope_timeseries_benchmark_suite.py"),
+        "--reports-dir",
+        str(report_dir),
+        "--summary-json",
+        str(summary_path),
+    ]
+    if has_live_matlab():
+        command = [
+            str(REPO_ROOT / "scripts" / "run_scope_timeseries_benchmark_suite.py"),
+            "--matlab",
+            matlab_bin(),
             "--reports-dir",
             str(report_dir),
             "--summary-json",
             str(summary_path),
+        ]
+    else:
+        assert fixture_dir.exists(), f"Pregenerated time-series benchmark fixtures not found: {fixture_dir}"
+        command.extend(["--benchmark-dir", str(fixture_dir), "--skip-export"])
+
+    subprocess.run(
+        [
+            sys.executable,
+            *command,
         ],
         check=True,
-        cwd=repo_root,
-        env=env,
+        cwd=REPO_ROOT,
+        env=python_test_env(),
     )
 
     summary = json.loads(summary_path.read_text(encoding="utf-8"))

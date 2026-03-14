@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 
 def _load_suite_module():
     repo_root = Path(__file__).resolve().parents[1]
@@ -117,6 +119,25 @@ def test_default_matlab_honours_environment_override(monkeypatch):
     module = _load_suite_module()
 
     assert module.DEFAULT_MATLAB == "/custom/matlab"
+
+
+def test_skip_export_requires_existing_benchmark_dir(monkeypatch, tmp_path):
+    module = _load_suite_module()
+    missing_dir = tmp_path / "missing"
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "run_scope_timeseries_benchmark_suite.py",
+            "--steps",
+            "1",
+            "--benchmark-dir",
+            str(missing_dir),
+            "--skip-export",
+        ],
+    )
+
+    with pytest.raises(FileNotFoundError, match="--skip-export"):
+        module.main()
 
 
 def test_scene_suite_policy_helper_is_reused_for_timeseries_policy():
