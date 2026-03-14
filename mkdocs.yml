@@ -1,0 +1,30 @@
+site_name: SCOPE Torch
+site_description: PyTorch-first implementation of the SCOPE canopy radiative transfer model.
+repo_name: SCOPE_Torch
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+
+plugins:
+  - search
+  - mermaid2
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Overview: index.md
+  - Installation: installation.md
+  - Quickstart: quickstart.md
+  - Model Mechanics: model-mechanics.md
+  - Input / Output Reference: input-output-reference.md
+  - Examples: examples.md
+  - Production Notes: production-notes.md
+  - Benchmark Policy: benchmark-policy.md

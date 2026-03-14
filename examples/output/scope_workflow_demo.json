@@ -1,0 +1,52 @@
+{
+  "product": "scope_workflow",
+  "components": [
+    "reflectance",
+    "reflectance_directional",
+    "reflectance_profile",
+    "fluorescence",
+    "fluorescence_directional",
+    "fluorescence_profile"
+  ],
+  "dims": {
+    "y": 1,
+    "x": 1,
+    "time": 2,
+    "wavelength": 2001,
+    "direction": 2,
+    "layer_interface": 4,
+    "fluorescence_wavelength": 53,
+    "layer": 3
+  },
+  "rsot_650nm_t0": 0.04522854188089004,
+  "LoF_peak_t0": 1.985767010834904e-05,
+  "LoF_peak_wavelength_t0": 744.0,
+  "directional_refl_shape": [
+    1,
+    1,
+    2,
+    2,
+    2001
+  ],
+  "fluorescence_profile_shape": [
+    1,
+    1,
+    2,
+    4,
+    53
+  ],
+  "sample_variables": [
+    "EoutF",
+    "EoutF_",
+    "EoutFrc_",
+    "F684",
+    "F685",
+    "F740",
+    "F761",
+    "Femleaves_",
+    "Fmin_",
+    "Fplu_",
+    "LoF_",
+    "LoF_scattered"
+  ]
+}

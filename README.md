@@ -1,81 +1,160 @@
 # SCOPE Torch
 
-PyTorch-first port of the [SCOPE](https://github.com/Christiaanvandertol/SCOPE) canopy radiative transfer model with support for batched simulations, differentiable components, and GPU acceleration.
+PyTorch-first implementation of the SCOPE canopy radiative transfer model for reflectance, fluorescence, thermal radiance, and coupled energy-balance workflows.
 
-## Goals
-- Maintain parity with the original MATLAB/Fortran implementations for all radiative, fluorescence, and energy balance components.
-- Run many simulations (space *or* time grids) simultaneously so weather reanalyses, EO retrievals, and tower data can be fused efficiently.
-- Enable gradient-based workflows (calibration, inversion, UQ) by keeping every module differentiable end-to-end.
+## What It Is
 
-## Repository Layout
+`scope_torch` is designed for users who need:
 
-```
-src/
-  scope_torch/
-    config.py              # Simulation/IO dataclasses + device helpers
-    data/grid.py           # ROI/time ingestion + batching (xarray -> torch)
-    canopy/
-      foursail.py          # Batched 4SAIL canopy reflectance core
-      fluorescence.py      # One-pass, layered, and biochemical canopy fluorescence
-      thermal.py           # Spectral and integrated canopy thermal RT
-    biochem/
-      leaf.py              # Leaf physiology and fluorescence-yield drivers
-    energy/
-      balance.py           # Coupled energy-balance closure + coupled RT handoff
-    runners/
-      grid.py              # ROI/time runner for reflectance, fluorescence, thermal, and energy balance
-    io/
-      prepare.py           # Reusable input-preparation helpers for runner-ready datasets
-      export.py            # NetCDF export helpers for prepared inputs and runner outputs
-    spectral/
-      fluspect.py          # Leaf optics + fluorescence (PyTorch translation)
-      loaders.py           # Upstream SCOPE optical asset loaders
-      soil.py              # Soil library and BSM soil optics
-PLAN.md                    # Detailed implementation roadmap + physical equations
-prepare_scope_input.py     # Thin CLI wrapper around scope_torch.io.prepare
-scope_grid_netcdf_inmemory_refactored.m  # Legacy MATLAB grid runner reference
+- asset-backed SCOPE physics in Python
+- batched ROI/time execution on `xarray` datasets
+- differentiable model components in PyTorch
+- reproducible MATLAB parity checks in CI and local development
+
+The current implementation supports:
+
+- leaf optics through FLUSPECT
+- canopy reflectance through 4SAIL-based transport
+- layered fluorescence and thermal radiative transfer
+- leaf biochemistry and coupled energy balance
+- directional and vertical-profile outputs on the homogeneous canopy path
+- ROI/time workflows with `xarray` input and output assembly
+
+## Install
+
+### 1. Clone the repository
+
+```bash
+git clone <your-repo-url> SCOPE_Torch
+cd SCOPE_Torch
 ```
 
-## Development Roadmap
-See [PLAN.md](PLAN.md) for the physics summary, staged translation plan, and GPU-oriented design notes. Short version:
-1. **Core physics stack** → leaf optics, 4SAIL reflectance, layered fluorescence, thermal RT, leaf biochemistry, and energy balance are now implemented, and the homogeneous canopy path now exposes explicit directional/profile APIs for reflectance, fluorescence, and thermal RT.
-2. **Current parity status** → the benchmark harness now scales to the full 100-case upstream Latin-hypercube suite, and there is now a separate 30-step upstream time-series parity sweep. Converged scene and time-series steps are locked for reflectance, fluorescence, thermal RT, and the coupled energy products, while non-converged upstream `ebal` cases such as scene `042` and time-series step `026` are tracked separately as stress diagnostics.
-3. **Workflow status** → the grid path is now chunk-local, metadata-preserving, backed by reusable input-preparation helpers, able to write prepared or simulated `xarray` products through the shared NetCDF export layer, exposes directional and vertical-profile reflectance, fluorescence, and thermal workflows through the ROI/time runner surface, and now has a high-level `run_scope_dataset(...)` entry point that honors prepared-dataset `calc_directional`, `calc_vert_profiles`, `calc_fluor`, and `calc_planck` intent.
-4. **Regression infrastructure** → GitHub Actions now runs the standard Python suite, committed benchmark summaries are versioned in pytest, standalone and coupled runner workflows now have batched-vs-single and dtype coverage, the lower-level kernels now have direct batch/dtype regression coverage with optional CUDA mirrors, and benchmark interpretation plus CI-lane policy are documented in [docs/benchmark-policy.md](docs/benchmark-policy.md).
-5. **Deferred feature** → true `mSCOPE` support is still planned but intentionally deferred until a real workflow needs vertically heterogeneous leaf optics.
+### 2. Fetch the pinned upstream SCOPE assets
+
+```bash
+python scripts/fetch_upstream_scope.py
+```
+
+If you installed the package in an environment already, the same helper is available as:
+
+```bash
+scope-torch-fetch-upstream
+```
+
+### 3. Create an environment and install
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+```
+
+### 4. Verify the install
+
+```bash
+PYTHONPATH=src python examples/basic_scene_reflectance.py
+PYTHONPATH=src python -m pytest -q tests/test_scope_benchmark_parity.py tests/test_scope_timeseries_benchmark_parity.py
+```
+
+## 5-Minute Quickstart
+
+### Minimal scene reflectance run
+
+```bash
+PYTHONPATH=src python examples/basic_scene_reflectance.py
+```
+
+Expected output:
+
+```json
+{
+  "product": "reflectance",
+  "dims": {"y": 1, "x": 1, "time": 1, "wavelength": 2001},
+  "rsot_650nm": 0.047138178221010914,
+  "rsot_865nm": 0.4100649627325952,
+  "rsot_1600nm": 0.26994893328935227
+}
+```
+
+### High-level workflow run
+
+```bash
+PYTHONPATH=src python examples/scope_workflow_demo.py
+```
+
+Expected output:
+
+```json
+{
+  "product": "scope_workflow",
+  "components": [
+    "reflectance",
+    "reflectance_directional",
+    "reflectance_profile",
+    "fluorescence",
+    "fluorescence_directional",
+    "fluorescence_profile"
+  ],
+  "rsot_650nm_t0": 0.04522854188089004,
+  "LoF_peak_t0": 1.985767010834904e-05,
+  "LoF_peak_wavelength_t0": 744.0
+}
+```
+
+## Main Entry Points
+
+For most users, the preferred entry points are:
+
+- [`ScopeGridRunner.run_scope_dataset(...)`](src/scope_torch/runners/grid.py)
+  High-level reflectance/fluorescence/thermal workflow dispatch from prepared `xarray` inputs.
+- [`prepare_scope_input_dataset(...)`](src/scope_torch/io/prepare.py)
+  Build a runner-ready dataset from weather, observation, and Sentinel-2 bio inputs.
+- [`write_netcdf_dataset(...)`](src/scope_torch/io/export.py)
+  Persist prepared or simulated outputs to NetCDF with safe backend selection and compression handling.
+
+For direct lower-level use:
+
+- [`FluspectModel`](src/scope_torch/spectral/fluspect.py)
+- [`CanopyReflectanceModel`](src/scope_torch/canopy/reflectance.py)
+- [`CanopyFluorescenceModel`](src/scope_torch/canopy/fluorescence.py)
+- [`CanopyThermalRadianceModel`](src/scope_torch/canopy/thermal.py)
+- [`CanopyEnergyBalanceModel`](src/scope_torch/energy/balance.py)
+
+## Documentation Map
+
+- [Installation Guide](docs/installation.md)
+- [Quickstart](docs/quickstart.md)
+- [Model Mechanics](docs/model-mechanics.md)
+- [Input / Output Reference](docs/input-output-reference.md)
+- [Examples](docs/examples.md)
+- [Production Notes](docs/production-notes.md)
+- [Benchmark Policy](docs/benchmark-policy.md)
+
+Build the docs locally with:
+
+```bash
+python -m pip install -e ".[docs]"
+mkdocs build --strict
+```
+
+## Production Notes
+
+- Asset-backed constructors such as `from_scope_assets(...)` require an upstream SCOPE checkout. The recommended path is `scope-torch-fetch-upstream`.
+- The default CI suite runs parity tests in live-or-pregenerated mode. On machines without MATLAB, the tests compare against checked-in MATLAB fixtures.
+- The self-hosted GPU and live-MATLAB lanes remain optional operational lanes; see [docs/benchmark-policy.md](docs/benchmark-policy.md).
 
 ## Testing
-After installing the project and dev dependencies, run the unit tests with
+
+Run the default suite with:
 
 ```bash
 PYTHONPATH=src python -m pytest -q
 ```
 
-Current coverage is strongest for the implemented kernels:
+The strongest automated checks currently include:
 
-- `tests/spectral/test_fluspect.py` compares the leaf optics implementation to an analytically equivalent NumPy reference.
-- `tests/canopy/test_foursail.py` checks the canopy solver against `prosail`'s 4SAIL implementation.
-- `tests/canopy/test_fluorescence.py`, `tests/canopy/test_thermal.py`, and `tests/energy/test_balance.py` cover layered fluorescence, thermal RT, and coupled energy balance.
-- `tests/test_kernel_execution_modes.py` locks lower-level FLUSPECT, reflectance profile, fluorescence profile, thermal profile, and leaf biochemistry kernels across batched-vs-single execution, float32-vs-float64 CPU execution, and optional CPU-vs-CUDA checks.
-- `tests/test_scope_grid_runner.py` verifies that the ROI/time runner matches manual single-scene execution paths and now also locks batch-size, dtype/device consistency, plus directional/profile dataset assembly for the standalone reflectance, fluorescence, biochemical fluorescence, and thermal workflows.
-- `tests/test_scope_grid_runner.py` also covers batch-size and dtype consistency for the coupled `run_energy_balance_fluorescence(...)` and `run_energy_balance_thermal(...)` workflows, with optional CUDA mirrors where available.
-- `tests/test_benchmark_summary_regression.py` locks the committed 100-case scene summary and 30-step time-series summary to explicit tolerances without requiring MATLAB.
-
-Benchmark-policy note:
-- Use the committed suite summaries and `leaf_iteration.*` metrics for true same-state parity. Raw `energy_balance.sunlit_*` and `energy_balance.shaded_*` fields in benchmark reports are phase-lagged iterate diagnostics and are not the primary parity contract.
-- See [docs/benchmark-policy.md](docs/benchmark-policy.md) for the summary interpretation order and CI policy.
-
-MATLAB parity tooling is also available:
-
-- `tests/test_scope_benchmark_parity.py` now always runs: it exports a fresh MATLAB scene fixture when MATLAB is available and otherwise compares against the checked-in scene fixture.
-- `tests/test_scope_timeseries_benchmark_parity.py` now always runs: it exports fresh MATLAB time-series fixtures when MATLAB is available and otherwise compares against the checked-in time-series fixture set.
-- `scripts/compare_scope_benchmark.py` compares one exported MATLAB fixture against the Python implementation.
-- `scripts/run_scope_benchmark_suite.py` now sweeps the full upstream Latin-hypercube case set by default and writes `tests/data/scope_benchmark_suite_summary.json`.
-- `scripts/run_scope_timeseries_benchmark_suite.py` sweeps the upstream 30-step verification time series and writes `tests/data/scope_timeseries_benchmark_summary.json`.
-
-Continuous integration runs the default Python suite on a hosted CPU matrix via [.github/workflows/tests.yml](.github/workflows/tests.yml), including the MATLAB parity tests in pregenerated-fixture fallback mode when MATLAB is not available. The same workflow also exposes opt-in self-hosted GPU and MATLAB jobs on manual dispatch; the MATLAB lane reruns those parity tests against fresh live MATLAB exports.
-
-Self-hosted workflow notes:
-- The GPU job expects a runner labeled `self-hosted`, `linux`, `x64`, `gpu`.
-- The MATLAB parity job expects a runner labeled `self-hosted`, `matlab`.
-- Set the repository variable `MATLAB_BIN` if the MATLAB executable is not available as `matlab` on the runner `PATH`.
+- kernel parity and execution-mode regression tests
+- ROI/time runner consistency tests
+- committed scene and time-series benchmark summary regression tests
+- live-or-pregenerated MATLAB parity tests for the single-scene and time-series benchmark gates

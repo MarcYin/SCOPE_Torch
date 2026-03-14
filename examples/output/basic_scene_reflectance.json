@@ -1,0 +1,39 @@
+{
+  "product": "reflectance",
+  "dims": {
+    "y": 1,
+    "x": 1,
+    "time": 1,
+    "wavelength": 2001
+  },
+  "variables": [
+    "gammasdb",
+    "gammasdf",
+    "gammaso",
+    "leaf_refl",
+    "leaf_tran",
+    "rdd",
+    "rddt",
+    "rdo",
+    "rdot",
+    "rsd",
+    "rsdt",
+    "rso",
+    "rsod",
+    "rsodt",
+    "rsos",
+    "rsost",
+    "rsot",
+    "tdd",
+    "tdo",
+    "too",
+    "tsd",
+    "tss",
+    "tsstoo"
+  ],
+  "rsot_650nm": 0.047138178221010914,
+  "rsot_865nm": 0.4100649627325952,
+  "rsot_1600nm": 0.26994893328935227,
+  "rdd_mean": 0.22790320156253166,
+  "rso_mean": 0.22750613414759552
+}

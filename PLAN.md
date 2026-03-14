@@ -22,6 +22,7 @@
 1. The default CI path now runs the MATLAB parity tests in live-or-pregenerated mode, but dedicated fresh-export MATLAB runs still require self-hosted licensed infrastructure.
 2. Device coverage is substantially improved but still not exhaustive: standalone and coupled runner workflows now have batched-vs-single and dtype coverage, the lower-level kernel layer now has direct batch/dtype regression tests with optional CUDA mirrors, but mixed-dtype and broader backend coverage are still missing.
 3. Workflow parity now includes high-level option-driven directional/profile dispatch through the shared runner surface, but it is still narrow around downstream export targets beyond the current shared NetCDF writer and any pipeline-specific workflow wrappers.
+4. The pregenerated time-series MATLAB fixture set now makes hosted parity deterministic, but it adds meaningful repository weight and should be treated as an explicit maintenance decision rather than an accidental byproduct.
 
 ### Main accuracy and scope gaps
 
@@ -154,6 +155,7 @@ Completed:
 Remaining finish items:
 1. Decide whether the current opt-in self-hosted live-MATLAB lane should eventually become a required branch-protection signal.
 2. Add mixed-dtype or broader backend coverage if those execution modes are expected in production use.
+3. Decide whether the checked-in time-series MAT fixtures should remain in-repo, move to Git LFS, or be regenerated from a separate artifact source.
 
 Exit criteria:
 1. Each implemented physics module has reference-backed regression tests in automated CI.
@@ -162,17 +164,18 @@ Exit criteria:
 
 ## 4. Suggested Next Step
 
-The next step should be **decide how strict the parity CI lane should become and whether any downstream wrappers still need to be added around the now-stable workflow surface**.
+The next step should be **decide how to operationalize the parity infrastructure now that the core model is effectively closed**.
 
 Recommended sequence:
 
-1. Decide whether the new self-hosted live-MATLAB parity lane should remain manual or become a required protected-branch signal.
-2. Add mixed-dtype or broader backend coverage only if those execution modes are expected in production use.
-3. Add any remaining downstream-specific wrappers around `run_scope_dataset(...)` only if a real pipeline needs them.
-4. Keep `mSCOPE` as a deferred phase until there is a concrete workflow that requires vertically heterogeneous leaf optics.
+1. Decide whether the checked-in `tests/data/timeseries_benchmark_fixtures/` set should stay in the repo, move to Git LFS, or be replaced by an external artifact/cache strategy. That is now the highest-cost maintenance choice.
+2. Decide whether the self-hosted live-MATLAB lane should remain manual or become a required protected-branch signal once the infrastructure is reliable enough.
+3. Add mixed-dtype coverage only if `float32`/`float64` interoperability is expected in production workflows; otherwise keep the current execution matrix stable.
+4. Add any remaining downstream-specific wrappers around `run_scope_dataset(...)` only if a real consumer needs a thinner application-facing API.
+5. Keep `mSCOPE` as a deferred phase until there is a concrete workflow that requires vertically heterogeneous leaf optics.
 
 Why this should be next:
 
-1. The core model, ROI/time workflow, benchmark policy, NetCDF export surface, option-driven workflow dispatch, and both runner-level and kernel-level execution coverage are already in place, so the highest remaining risk is policy/documentation drift rather than missing basic numerical hardening.
-2. The widened scene and time-series suites already constrain the physics stack tightly enough that the remaining workflow-surface work can proceed safely.
-3. CI and committed summary tolerances now exist, which makes it practical to harden the remaining option-level behavior without losing parity visibility.
+1. The physics stack, ROI/time workflow, benchmark policy, and runner/kernel coverage are already in place, so the remaining risk is mostly operational rather than numerical.
+2. The benchmark infrastructure now works on both hosted and self-hosted runners, which shifts the main open questions to storage cost, CI policy, and consumer-facing ergonomics.
+3. Further feature work is lower leverage than making the parity infrastructure easier to maintain and cheaper to run.

@@ -22,7 +22,7 @@ The generated benchmark summaries now encode those replacements directly in thei
 
 ## CI Policy
 
-The default required lane is the hosted CPU Python suite in [`tests.yml`](../.github/workflows/tests.yml).
+The default required lane is the hosted CPU Python suite in `.github/workflows/tests.yml`.
 
 The hosted CPU lane still runs the MATLAB parity tests, but in fallback mode:
 

@@ -9,4 +9,5 @@ upstream/
 .DS_Store
 build/
 dist/
+site/
 *.egg-info/
