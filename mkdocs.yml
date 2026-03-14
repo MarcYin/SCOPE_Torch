@@ -26,6 +26,11 @@ nav:
   - Model Mechanics: model-mechanics.md
   - Input / Output Reference: input-output-reference.md
   - Variable Glossary: variable-glossary.md
+  - Workflow Variables:
+      - Reflectance: workflow-variables/reflectance.md
+      - Fluorescence: workflow-variables/fluorescence.md
+      - Thermal: workflow-variables/thermal.md
+      - Energy Balance: workflow-variables/energy-balance.md
   - Examples: examples.md
   - Production Notes: production-notes.md
   - Releasing: releasing.md

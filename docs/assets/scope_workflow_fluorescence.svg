@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="420" viewBox="0 0 720 420">
+  <rect width="100%" height="100%" fill="#fffdf8"/>
+  <line x1="64" y1="368" x2="696" y2="368" stroke="#222" stroke-width="1.5"/>
+  <line x1="64" y1="36" x2="64" y2="368" stroke="#222" stroke-width="1.5"/>
+  <polyline fill="none" stroke="#9a3412" stroke-width="3" points="64.00,368.00 76.15,367.33 88.31,366.40 100.46,364.86 112.62,362.42 124.77,358.96 136.92,354.47 149.08,348.71 161.23,341.02 173.38,330.74 185.54,314.89 197.69,301.96 209.85,295.02 222.00,295.72 234.15,293.65 246.31,286.97 258.46,276.64 270.62,262.73 282.77,242.80 294.92,217.83 307.08,188.76 319.23,155.09 331.38,121.74 343.54,86.80 355.69,57.58 367.85,37.37 380.00,36.00 392.15,53.02 404.31,84.68 416.46,118.65 428.62,157.65 440.77,189.84 452.92,218.80 465.08,247.15 477.23,268.38 489.38,283.98 501.54,295.37 513.69,304.12 525.85,311.92 538.00,319.36 550.15,326.26 562.31,332.62 574.46,338.45 586.62,343.75 598.77,348.50 610.92,352.73 623.08,356.44 635.23,359.63 647.38,362.30 659.54,364.46 671.69,366.10 683.85,367.23 696.00,367.86"/>
+  <text x="64" y="24" font-family="Georgia, serif" font-size="20" fill="#111">Directional Fluorescence Spectrum</text>
+  <text x="360.0" y="406" text-anchor="middle" font-family="Georgia, serif" font-size="15" fill="#333">Fluorescence wavelength (nm)</text>
+  <text x="18" y="210.0" transform="rotate(-90 18 210.0)" text-anchor="middle" font-family="Georgia, serif" font-size="15" fill="#333">LoF_ (W m-2 um-1 sr-1)</text>
+  <text x="64" y="390" font-family="monospace" font-size="12" fill="#555">640</text>
+  <text x="696" y="390" text-anchor="end" font-family="monospace" font-size="12" fill="#555">848</text>
+  <text x="56" y="368" text-anchor="end" dominant-baseline="middle" font-family="monospace" font-size="12" fill="#555">0</text>
+  <text x="56" y="36" text-anchor="end" dominant-baseline="middle" font-family="monospace" font-size="12" fill="#555">1.99e-05</text>
+</svg>

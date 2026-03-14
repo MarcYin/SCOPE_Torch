@@ -13,6 +13,7 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 scope --help
+scope vars --workflow reflectance
 ```
 
 ## 2. Run a Minimal Scene
@@ -88,6 +89,14 @@ scope prepare \
   --output scope_inputs.nc
 ```
 
+Before running prepared datasets from external pipelines, validate them:
+
+```python
+from scope import validate_scope_dataset
+
+validate_scope_dataset(dataset, workflow="scope")
+```
+
 Equivalent direct entry points are:
 
 ```bash
@@ -112,7 +121,7 @@ scope run \
   --input scope_inputs.nc \
   --output scope_outputs.nc \
   --scope-root ./upstream/SCOPE \
-  --workflow scope
+  --workflow reflectance
 ```
 
 For a reflectance-only run:

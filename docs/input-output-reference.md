@@ -7,6 +7,8 @@ For name-by-name physical meanings, units, aliases, and search, use [Variable Gl
 ```bash
 scope vars Rntot
 scope vars --all --kind output
+scope vars --workflow energy-balance
+scope vars --related Rntot
 ```
 
 ## Preferred Entry Point
@@ -20,6 +22,14 @@ That method dispatches the appropriate reflectance / fluorescence / thermal work
 - runner-ready `xarray.Dataset` inputs
 - a `varmap` that maps dataset variable names onto model names
 - dataset attributes or explicit `scope_options`
+
+Before running external datasets through the model, validate them with:
+
+```python
+from scope import validate_scope_dataset
+
+validate_scope_dataset(dataset, workflow="scope")
+```
 
 ## Common Dataset Dimensions
 
@@ -171,6 +181,14 @@ Assembled workflow datasets preserve:
 - workflow attrs such as `calc_fluor` and `calc_directional`
 - `scope_product`
 - `scope_components`
+- per-variable metadata derived from the glossary registry:
+  - `long_name`
+  - `units`
+  - `description`
+  - `scope_category`
+  - `scope_kind`
+  - `scope_relationship` when applicable
+  - `scope_source_doc`
 
 ## Recommended Runtime Pattern
 

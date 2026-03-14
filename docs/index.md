@@ -32,6 +32,7 @@ If this is your first time using the project:
 2. Run the examples in [Quickstart](quickstart.md)
 3. Use [Input / Output Reference](input-output-reference.md) when building real workflows
 4. Use [Variable Glossary](variable-glossary.md) when you need the physical meaning of a specific name
+5. Use the workflow guides such as [Reflectance Variables](workflow-variables/reflectance.md) when you want a filtered view instead of the full glossary
 
 ## Main User Entry Points
 
@@ -39,13 +40,15 @@ For most application code, prefer:
 
 - `ScopeGridRunner.run_scope_dataset(...)`
 - `prepare_scope_input_dataset(...)`
+- `validate_scope_dataset(...)`
 - `write_netcdf_dataset(...)`
 
 These cover the common production path:
 
 1. prepare a runner-ready `xarray.Dataset`
-2. execute the requested SCOPE workflows
-3. persist outputs to NetCDF when needed
+2. validate the dataset for the intended workflow
+3. execute the requested SCOPE workflows
+4. persist outputs to NetCDF when needed
 
 ## Current Feature Surface
 
@@ -63,5 +66,6 @@ The current implementation supports:
 - [Quickstart](quickstart.md)
 - [Model Mechanics](model-mechanics.md)
 - [Variable Glossary](variable-glossary.md)
+- [Reflectance Variables](workflow-variables/reflectance.md)
 - [Examples](examples.md)
 - [Production Notes](production-notes.md)

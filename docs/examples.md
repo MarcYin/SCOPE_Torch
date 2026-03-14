@@ -28,6 +28,10 @@ What it demonstrates:
 - reflectance-only workflow
 - summary extraction from the assembled `xarray.Dataset`
 
+Visual:
+
+![Basic scene reflectance spectrum](assets/basic_scene_reflectance.svg)
+
 ## 2. High-Level Workflow Dispatch
 
 Script:
@@ -53,6 +57,12 @@ What it demonstrates:
 - vertical-profile outputs
 - fluorescence outputs merged with base reflectance products
 
+Visuals:
+
+![Directional fluorescence spectrum](assets/scope_workflow_fluorescence.svg)
+
+![Layer fluorescence profile](assets/scope_workflow_profile.svg)
+
 ## 3. Input Preparation CLI
 
 Command:
@@ -75,9 +85,10 @@ This is the intended entry point for building runner-ready `xarray` datasets fro
 For application code, the most stable pattern is:
 
 1. Prepare a runner-ready `xarray.Dataset`
-2. Keep the workflow intent in dataset attrs
-3. Call `ScopeGridRunner.run_scope_dataset(...)`
-4. Persist the result with `write_netcdf_dataset(...)`
+2. Validate it with `validate_scope_dataset(...)`
+3. Keep the workflow intent in dataset attrs
+4. Call `ScopeGridRunner.run_scope_dataset(...)`
+5. Persist the result with `write_netcdf_dataset(...)`
 
 Use the example scripts as working templates rather than writing directly against low-level kernels unless you need custom research behavior.
 

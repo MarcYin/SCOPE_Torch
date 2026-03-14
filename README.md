@@ -55,6 +55,8 @@ scope fetch-upstream --help
 scope prepare --help
 scope run --help
 scope vars Cab
+scope vars --workflow fluorescence
+scope vars --related Rntot
 ```
 
 ### 1. Clone the repository
@@ -151,7 +153,7 @@ scope run \
   --input scope_inputs.nc \
   --output scope_outputs.nc \
   --scope-root ./upstream/SCOPE \
-  --workflow scope
+  --workflow reflectance
 ```
 
 ## Main Entry Points
@@ -162,6 +164,8 @@ For most users, the preferred entry points are:
   High-level reflectance/fluorescence/thermal workflow dispatch from prepared `xarray` inputs.
 - [`prepare_scope_input_dataset(...)`](src/scope/io/prepare.py)
   Build a runner-ready dataset from weather, observation, and Sentinel-2 bio inputs.
+- [`validate_scope_dataset(...)`](src/scope/io/schema.py)
+  Validate required variables, soil alternatives, and key dimensions before a workflow is executed.
 - [`write_netcdf_dataset(...)`](src/scope/io/export.py)
   Persist prepared or simulated outputs to NetCDF with safe backend selection and compression handling.
 
@@ -180,6 +184,7 @@ For direct lower-level use:
 - [Model Mechanics](docs/model-mechanics.md)
 - [Input / Output Reference](docs/input-output-reference.md)
 - [Variable Glossary](docs/variable-glossary.md)
+- [Workflow Variable Guides](docs/workflow-variables/reflectance.md)
 - [Examples](docs/examples.md)
 - [Production Notes](docs/production-notes.md)
 - [Releasing](docs/releasing.md)
@@ -196,6 +201,8 @@ mkdocs build --strict
 
 - Asset-backed constructors such as `from_scope_assets(...)` require an upstream SCOPE checkout. The recommended path is `scope-fetch-upstream`.
 - The installed CLI now covers the common shell workflow: `scope fetch-upstream`, `scope prepare`, and `scope run`.
+- Prepared inputs and assembled outputs now carry glossary-derived `xarray` metadata such as `long_name`, `units`, `description`, `scope_category`, and `scope_relationship`.
+- `scope run` validates workflow-specific inputs before execution, and the same validator is available directly as `validate_scope_dataset(...)`.
 - The default CI suite runs parity tests in live-or-pregenerated mode. On machines without MATLAB, the tests compare against checked-in MATLAB fixtures.
 - The self-hosted GPU and live-MATLAB lanes remain optional operational lanes; see [docs/benchmark-policy.md](docs/benchmark-policy.md).
 - Documentation can be built locally with `mkdocs build --strict` and is deployed by the dedicated GitHub Pages workflow.
