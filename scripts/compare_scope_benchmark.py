@@ -9,12 +9,12 @@ import numpy as np
 import torch
 from scipy.io import loadmat
 
-from scope_torch.biochem import LeafBiochemistryInputs, LeafMeteo
-from scope_torch.canopy.fluorescence import CanopyFluorescenceModel
-from scope_torch.canopy.foursail import FourSAILModel
-from scope_torch.canopy.reflectance import CanopyReflectanceModel
-from scope_torch.canopy.thermal import CanopyThermalRadianceModel, ThermalOptics
-from scope_torch.energy import (
+from scope.biochem import LeafBiochemistryInputs, LeafMeteo
+from scope.canopy.fluorescence import CanopyFluorescenceModel
+from scope.canopy.foursail import FourSAILModel
+from scope.canopy.reflectance import CanopyReflectanceModel
+from scope.canopy.thermal import CanopyThermalRadianceModel, ThermalOptics
+from scope.energy import (
     CanopyEnergyBalanceModel,
     EnergyBalanceCanopy,
     EnergyBalanceMeteo,
@@ -23,7 +23,7 @@ from scope_torch.energy import (
     ResistanceInputs,
     aerodynamic_resistances,
 )
-from scope_torch.spectral.fluspect import FluspectModel, LeafBioBatch
+from scope.spectral.fluspect import FluspectModel, LeafBioBatch
 
 
 def _load_benchmark(path: Path) -> dict[str, Any]:
@@ -159,7 +159,7 @@ def _benchmark_status(benchmark: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Compare scope_torch outputs against a MATLAB-exported SCOPE benchmark scene.")
+    parser = argparse.ArgumentParser(description="Compare scope outputs against a MATLAB-exported SCOPE benchmark scene.")
     parser.add_argument(
         "--benchmark",
         type=Path,

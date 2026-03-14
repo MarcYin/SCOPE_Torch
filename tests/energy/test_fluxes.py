@@ -1,6 +1,6 @@
 import torch
 
-from scope_torch.energy import (
+from scope.energy import (
     HeatFluxInputs,
     ResistanceInputs,
     aerodynamic_resistances,

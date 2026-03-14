@@ -6,12 +6,12 @@ from functools import lru_cache
 import pytest
 import torch
 
-from scope_torch.biochem import LeafBiochemistryInputs, LeafBiochemistryModel, LeafMeteo
-from scope_torch.canopy.fluorescence import CanopyFluorescenceModel
-from scope_torch.canopy.foursail import FourSAILModel, campbell_lidf
-from scope_torch.canopy.reflectance import CanopyReflectanceModel
-from scope_torch.canopy.thermal import CanopyThermalRadianceModel
-from scope_torch.spectral.fluspect import LeafBioBatch
+from scope.biochem import LeafBiochemistryInputs, LeafBiochemistryModel, LeafMeteo
+from scope.canopy.fluorescence import CanopyFluorescenceModel
+from scope.canopy.foursail import FourSAILModel, campbell_lidf
+from scope.canopy.reflectance import CanopyReflectanceModel
+from scope.canopy.thermal import CanopyThermalRadianceModel
+from scope.spectral.fluspect import LeafBioBatch
 
 
 def _index_value(value, index: int):

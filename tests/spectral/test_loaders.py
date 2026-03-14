@@ -2,8 +2,8 @@ from pathlib import Path
 
 import torch
 
-from scope_torch.spectral.fluspect import FluspectModel, LeafBioBatch
-from scope_torch.spectral.loaders import load_fluspect_resources, load_scope_filenames, load_soil_spectra, scope_repo_root
+from scope.spectral.fluspect import FluspectModel, LeafBioBatch
+from scope.spectral.loaders import load_fluspect_resources, load_scope_filenames, load_soil_spectra, scope_repo_root
 
 
 def test_load_scope_filenames_reads_default_assets():

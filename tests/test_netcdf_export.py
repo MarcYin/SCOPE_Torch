@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from scope_torch.io import (
+from scope.io import (
     NetCDFWriteOptions,
     available_netcdf_engines,
     build_netcdf_encoding,

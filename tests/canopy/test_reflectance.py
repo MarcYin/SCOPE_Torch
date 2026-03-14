@@ -1,8 +1,8 @@
 import torch
 
-from scope_torch.canopy.foursail import campbell_lidf
-from scope_torch.canopy.reflectance import CanopyReflectanceModel
-from scope_torch.spectral.fluspect import LeafBioBatch
+from scope.canopy.foursail import campbell_lidf
+from scope.canopy.reflectance import CanopyReflectanceModel
+from scope.spectral.fluspect import LeafBioBatch
 
 
 def test_canopy_reflectance_outputs_remain_internally_consistent():

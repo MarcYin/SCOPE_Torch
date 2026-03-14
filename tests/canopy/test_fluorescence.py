@@ -1,14 +1,14 @@
 import torch
 from scipy.interpolate import CubicSpline
 
-from scope_torch.biochem import LeafBiochemistryInputs
-from scope_torch.canopy.fluorescence import CanopyFluorescenceModel
-from scope_torch.canopy.foursail import FourSAILModel, campbell_lidf, scope_lidf
-from scope_torch.canopy.reflectance import CanopyReflectanceModel
-from scope_torch.spectral.fluspect import LeafBioBatch
-from scope_torch.spectral.fluspect import FluspectModel
-from scope_torch.spectral.loaders import load_soil_spectra
-from scope_torch.spectral.soil import SoilEmpiricalParams
+from scope.biochem import LeafBiochemistryInputs
+from scope.canopy.fluorescence import CanopyFluorescenceModel
+from scope.canopy.foursail import FourSAILModel, campbell_lidf, scope_lidf
+from scope.canopy.reflectance import CanopyReflectanceModel
+from scope.spectral.fluspect import LeafBioBatch
+from scope.spectral.fluspect import FluspectModel
+from scope.spectral.loaders import load_soil_spectra
+from scope.spectral.soil import SoilEmpiricalParams
 
 
 def test_canopy_fluorescence_model_outputs_consistent_sif_fields():

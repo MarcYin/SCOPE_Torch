@@ -12,7 +12,7 @@ from ..config import SimulationConfig
 
 @dataclass(slots=True)
 class ScopeGridDataModule:
-    """Turn ROI x time cubes into torch batches ready for SCOPE Torch."""
+    """Turn ROI x time cubes into torch batches ready for SCOPE."""
 
     dataset: xr.Dataset
     config: SimulationConfig

@@ -14,7 +14,7 @@ def _ensure_src_on_path() -> None:
 
 _ensure_src_on_path()
 
-from scope_torch.cli.prepare_scope_input import main
+from scope.cli.prepare_scope_input import main
 
 
 if __name__ == "__main__":

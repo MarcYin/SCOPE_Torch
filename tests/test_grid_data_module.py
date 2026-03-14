@@ -3,8 +3,8 @@ import pandas as pd
 import torch
 import xarray as xr
 
-from scope_torch.config import SimulationConfig
-from scope_torch.data import ScopeGridDataModule
+from scope.config import SimulationConfig
+from scope.data import ScopeGridDataModule
 
 
 def test_grid_module_batches():
@@ -50,7 +50,7 @@ def test_grid_module_assemble_dataset_preserves_coords_and_attrs():
         outputs,
         variable_dims={"spectral": ("wavelength",)},
         variable_coords={"wavelength": np.array([400.0, 500.0])},
-        attrs={"scope_torch_product": "unit-test"},
+        attrs={"scope_product": "unit-test"},
     )
 
     assert assembled["scalar"].dims == ("y", "x", "time")
@@ -58,4 +58,4 @@ def test_grid_module_assemble_dataset_preserves_coords_and_attrs():
     assert np.array_equal(assembled["scalar"].values, np.arange(8).reshape(2, 2, 2))
     assert np.array_equal(assembled["wavelength"].values, np.array([400.0, 500.0]))
     assert assembled.attrs["site"] == "test-site"
-    assert assembled.attrs["scope_torch_product"] == "unit-test"
+    assert assembled.attrs["scope_product"] == "unit-test"

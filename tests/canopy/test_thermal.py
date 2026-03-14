@@ -1,8 +1,8 @@
 import torch
 
-from scope_torch.canopy.foursail import FourSAILModel, campbell_lidf, scope_lidf
-from scope_torch.canopy.thermal import CanopyThermalRadianceModel, ThermalOptics, default_thermal_wavelengths
-from scope_torch.spectral.soil import SoilEmpiricalParams
+from scope.canopy.foursail import FourSAILModel, campbell_lidf, scope_lidf
+from scope.canopy.thermal import CanopyThermalRadianceModel, ThermalOptics, default_thermal_wavelengths
+from scope.spectral.soil import SoilEmpiricalParams
 
 
 def test_canopy_thermal_radiance_model_outputs_positive_spectra():

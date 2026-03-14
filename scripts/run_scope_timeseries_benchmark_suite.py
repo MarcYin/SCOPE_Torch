@@ -163,7 +163,7 @@ def main() -> int:
     parser.add_argument(
         "--benchmark-dir",
         type=Path,
-        default=Path(tempfile.gettempdir()) / "scope_torch_timeseries_benchmark_suite",
+        default=Path(tempfile.gettempdir()) / "scope_timeseries_benchmark_suite",
         help="Directory to store exported MAT benchmark fixtures.",
     )
     parser.add_argument(

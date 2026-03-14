@@ -1,4 +1,4 @@
-"""High-level SCOPE Torch simulation runners."""
+"""High-level SCOPE simulation runners."""
 
 from .grid import ScopeGridRunner
 

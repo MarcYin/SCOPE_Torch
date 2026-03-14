@@ -5,7 +5,7 @@ import torch
 
 from prosail.FourSAIL import foursail as foursail_np
 
-from scope_torch.canopy.foursail import FourSAILModel, campbell_lidf
+from scope.canopy.foursail import FourSAILModel, campbell_lidf
 
 
 def _hotspot_terms_scalar(hotspot, dso, ks, ko, lai):

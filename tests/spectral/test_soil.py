@@ -3,8 +3,8 @@ import math
 import numpy as np
 import torch
 
-from scope_torch.spectral.loaders import load_fluspect_resources
-from scope_torch.spectral.soil import BSMSoilParameters, SoilBSMModel
+from scope.spectral.loaders import load_fluspect_resources
+from scope.spectral.soil import BSMSoilParameters, SoilBSMModel
 
 
 def _np_fresnel_tav(alfa: float, nr: np.ndarray | float) -> np.ndarray:

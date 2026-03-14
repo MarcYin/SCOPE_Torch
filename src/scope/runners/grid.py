@@ -1336,7 +1336,10 @@ class ScopeGridRunner:
             dataset_outputs,
             variable_dims=variable_dims,
             variable_coords=variable_coords,
-            attrs={"scope_torch_product": product},
+            attrs={
+                "scope_product": product,
+                "scope_torch_product": product,
+            },
         )
 
     def _merge_workflow_datasets(
@@ -1359,7 +1362,9 @@ class ScopeGridRunner:
         attrs = dict(data_module.dataset.attrs)
         if scope_options:
             attrs.update(scope_options)
+        attrs["scope_product"] = product
         attrs["scope_torch_product"] = product
+        attrs["scope_components"] = ",".join(components)
         attrs["scope_torch_components"] = ",".join(components)
         merged.attrs = attrs
         return merged
@@ -1388,7 +1393,10 @@ class ScopeGridRunner:
             {name: torch.as_tensor(value) for name, value in outputs.items()},
             variable_dims=variable_dims,
             variable_coords=variable_coords,
-            attrs={"scope_torch_product": product},
+            attrs={
+                "scope_product": product,
+                "scope_torch_product": product,
+            },
         )
         dataset = dataset.assign_coords(
             directional_tto=("direction", torch.as_tensor(directional_tto).detach().cpu().numpy()),
@@ -1413,7 +1421,10 @@ class ScopeGridRunner:
             {name: torch.as_tensor(value) for name, value in outputs.items()},
             variable_dims=variable_dims,
             variable_coords=variable_coords,
-            attrs={"scope_torch_product": product},
+            attrs={
+                "scope_product": product,
+                "scope_torch_product": product,
+            },
         )
 
     def _dataset_tensor(self, value: torch.Tensor) -> torch.Tensor:

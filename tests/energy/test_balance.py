@@ -3,19 +3,19 @@ from dataclasses import fields, is_dataclass
 import pytest
 import torch
 
-from scope_torch.biochem import LeafBiochemistryInputs
-from scope_torch.canopy.fluorescence import CanopyFluorescenceResult
-from scope_torch.canopy.thermal import CanopyThermalRadianceResult
-from scope_torch.canopy.foursail import FourSAILModel, campbell_lidf
-from scope_torch.canopy.reflectance import CanopyReflectanceModel
-from scope_torch.energy import (
+from scope.biochem import LeafBiochemistryInputs
+from scope.canopy.fluorescence import CanopyFluorescenceResult
+from scope.canopy.thermal import CanopyThermalRadianceResult
+from scope.canopy.foursail import FourSAILModel, campbell_lidf
+from scope.canopy.reflectance import CanopyReflectanceModel
+from scope.energy import (
     CanopyEnergyBalanceModel,
     EnergyBalanceCanopy,
     EnergyBalanceMeteo,
     EnergyBalanceOptions,
     EnergyBalanceSoil,
 )
-from scope_torch.spectral.fluspect import FluspectModel, LeafBioBatch, OptiPar, SpectralGrids
+from scope.spectral.fluspect import FluspectModel, LeafBioBatch, OptiPar, SpectralGrids
 
 
 def _spectral(device, dtype):

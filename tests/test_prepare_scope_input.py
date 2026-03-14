@@ -7,8 +7,8 @@ import pandas as pd
 import pytest
 import xarray as xr
 
-import scope_torch.io.prepare as prepare_module
-from scope_torch.io import ScopeInputFiles, derive_observation_time_grid, prepare_scope_input_dataset, read_s2_bio_inputs
+import scope.io.prepare as prepare_module
+from scope.io import ScopeInputFiles, derive_observation_time_grid, prepare_scope_input_dataset, read_s2_bio_inputs
 
 
 def test_read_s2_bio_inputs_scales_and_deduplicates_times(tmp_path: Path):

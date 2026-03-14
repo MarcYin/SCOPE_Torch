@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from scope_torch.biochem import BiochemicalOptions, LeafBiochemistryInputs, LeafBiochemistryModel, LeafMeteo
+from scope.biochem import BiochemicalOptions, LeafBiochemistryInputs, LeafBiochemistryModel, LeafMeteo
 
 
 def _make_c3_inputs(*, intercept: float = 0.01) -> tuple[LeafBiochemistryInputs, LeafMeteo]:

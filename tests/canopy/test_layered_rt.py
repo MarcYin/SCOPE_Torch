@@ -4,8 +4,8 @@ import numpy as np
 import torch
 from scipy.integrate import quad
 
-from scope_torch.canopy.foursail import FourSAILModel, scope_lidf, scope_litab
-from scope_torch.canopy.layered_rt import LayeredCanopyTransportModel
+from scope.canopy.foursail import FourSAILModel, scope_lidf, scope_litab
+from scope.canopy.layered_rt import LayeredCanopyTransportModel
 
 
 def _pso_function(y: float, K: float, k: float, lai: float, hotspot: float, dso: float) -> float:

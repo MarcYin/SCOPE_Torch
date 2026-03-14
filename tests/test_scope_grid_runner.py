@@ -4,23 +4,23 @@ import pytest
 import torch
 import xarray as xr
 
-from scope_torch.biochem import LeafBiochemistryInputs, LeafBiochemistryResult
-from scope_torch.canopy.foursail import FourSAILModel, campbell_lidf
-from scope_torch.canopy.fluorescence import CanopyFluorescenceModel, CanopyFluorescenceResult
-from scope_torch.canopy.reflectance import CanopyReflectanceModel
-from scope_torch.energy import (
+from scope.biochem import LeafBiochemistryInputs, LeafBiochemistryResult
+from scope.canopy.foursail import FourSAILModel, campbell_lidf
+from scope.canopy.fluorescence import CanopyFluorescenceModel, CanopyFluorescenceResult
+from scope.canopy.reflectance import CanopyReflectanceModel
+from scope.energy import (
     CanopyEnergyBalanceResult,
     EnergyBalanceCanopy,
     EnergyBalanceMeteo,
     EnergyBalanceOptions,
     EnergyBalanceSoil,
 )
-from scope_torch.canopy.thermal import CanopyThermalRadianceModel, CanopyThermalRadianceResult, default_thermal_wavelengths
-from scope_torch.config import SimulationConfig
-from scope_torch.data import ScopeGridDataModule
-from scope_torch.runners.grid import ScopeGridRunner
-from scope_torch.spectral.fluspect import FluspectModel, LeafBioBatch, OptiPar, SpectralGrids
-from scope_torch.spectral.loaders import load_soil_spectra
+from scope.canopy.thermal import CanopyThermalRadianceModel, CanopyThermalRadianceResult, default_thermal_wavelengths
+from scope.config import SimulationConfig
+from scope.data import ScopeGridDataModule
+from scope.runners.grid import ScopeGridRunner
+from scope.spectral.fluspect import FluspectModel, LeafBioBatch, OptiPar, SpectralGrids
+from scope.spectral.loaders import load_soil_spectra
 
 
 CANOPY_KEYS = [
@@ -444,6 +444,7 @@ def test_scope_grid_runner_run_dataset_preserves_xarray_metadata():
 
     assert dataset_outputs["rso"].dims == ("y", "x", "time", "wavelength")
     assert dataset_outputs.attrs["site"] == "demo"
+    assert dataset_outputs.attrs["scope_product"] == "reflectance"
     assert dataset_outputs.attrs["scope_torch_product"] == "reflectance"
     assert np.allclose(dataset_outputs["wavelength"].values, spectral.wlP.cpu().numpy())
     expected_rso = flat_outputs["rso"].cpu().numpy().reshape(1, 1, 2, nwl)
@@ -499,7 +500,7 @@ def test_scope_grid_runner_directional_reflectance_dataset_preserves_direction_c
         varmap={"Cab": "Cab", "Cw": "Cw", "Cdm": "Cdm", "LAI": "LAI", "tts": "tts", "soil_refl": "soil_refl", "Esun_": "Esun_", "Esky_": "Esky_"},
     )
 
-    assert dataset_outputs.attrs["scope_torch_product"] == "directional_reflectance"
+    assert dataset_outputs.attrs["scope_product"] == "directional_reflectance"
     assert dataset_outputs["refl_"].dims == ("y", "x", "time", "direction", "wavelength")
     assert dataset_outputs["rso_"].dims == ("y", "x", "time", "direction", "wavelength")
     assert np.allclose(dataset_outputs["directional_tto"].values, np.array([10.0, 30.0]))
@@ -553,7 +554,7 @@ def test_scope_grid_runner_reflectance_profiles_dataset_preserves_layer_interfac
         nlayers=3,
     )
 
-    assert dataset_outputs.attrs["scope_torch_product"] == "reflectance_profiles"
+    assert dataset_outputs.attrs["scope_product"] == "reflectance_profiles"
     assert dataset_outputs["Ps"].dims == ("y", "x", "time", "layer_interface")
     assert dataset_outputs["Es_"].dims == ("y", "x", "time", "layer_interface", "wavelength")
     assert np.array_equal(dataset_outputs["layer_interface"].values, np.arange(4))
@@ -1152,7 +1153,7 @@ def test_scope_grid_runner_directional_thermal_dataset_preserves_direction_coord
     )
 
     thermal_wavelengths = default_thermal_wavelengths(device=device, dtype=dtype).cpu().numpy()
-    assert dataset_outputs.attrs["scope_torch_product"] == "directional_thermal"
+    assert dataset_outputs.attrs["scope_product"] == "directional_thermal"
     assert dataset_outputs["Lot_"].dims == ("y", "x", "time", "direction", "thermal_wavelength")
     assert dataset_outputs["BrightnessT"].dims == ("y", "x", "time", "direction")
     assert np.allclose(dataset_outputs["directional_tto"].values, np.array([15.0, 35.0]))
@@ -1197,7 +1198,7 @@ def test_scope_grid_runner_thermal_profiles_dataset_preserves_layer_dims():
     )
 
     thermal_wavelengths = default_thermal_wavelengths(device=device, dtype=dtype).cpu().numpy()
-    assert dataset_outputs.attrs["scope_torch_product"] == "thermal_profiles"
+    assert dataset_outputs.attrs["scope_product"] == "thermal_profiles"
     assert dataset_outputs["Ps"].dims == ("y", "x", "time", "layer_interface")
     assert dataset_outputs["Emint_"].dims == ("y", "x", "time", "layer_interface", "thermal_wavelength")
     assert dataset_outputs["layer_thermal_upward"].dims == ("y", "x", "time", "layer")
@@ -1485,7 +1486,7 @@ def test_scope_grid_runner_directional_fluorescence_dataset_preserves_direction_
     flat_outputs = runner.run_directional_fluorescence(module, varmap={name: name for name in data.data_vars})
     dataset_outputs = runner.run_directional_fluorescence_dataset(module, varmap={name: name for name in data.data_vars})
 
-    assert dataset_outputs.attrs["scope_torch_product"] == "directional_fluorescence"
+    assert dataset_outputs.attrs["scope_product"] == "directional_fluorescence"
     assert dataset_outputs["LoF_"].dims == ("y", "x", "time", "direction", "fluorescence_wavelength")
     assert np.allclose(dataset_outputs["directional_tto"].values, np.array([15.0, 35.0]))
     assert np.allclose(dataset_outputs["directional_psi"].values, np.array([10.0, 60.0]))
@@ -1528,7 +1529,7 @@ def test_scope_grid_runner_fluorescence_profiles_dataset_preserves_layer_dims():
     outputs = runner.run_fluorescence_profiles(module, varmap={name: name for name in data.data_vars})
     dataset_outputs = runner.run_fluorescence_profiles_dataset(module, varmap={name: name for name in data.data_vars})
 
-    assert dataset_outputs.attrs["scope_torch_product"] == "fluorescence_profiles"
+    assert dataset_outputs.attrs["scope_product"] == "fluorescence_profiles"
     assert dataset_outputs["Ps"].dims == ("y", "x", "time", "layer_interface")
     assert dataset_outputs["Fmin_"].dims == ("y", "x", "time", "layer_interface", "fluorescence_wavelength")
     assert dataset_outputs["layer_fluorescence"].dims == ("y", "x", "time", "layer")
@@ -1587,7 +1588,9 @@ def test_scope_grid_runner_run_scope_dataset_honours_reflectance_option_attrs():
     directional_outputs = runner.run_directional_reflectance_dataset(module, varmap=varmap, nlayers=3)
     profile_outputs = runner.run_reflectance_profiles_dataset(module, varmap=varmap, nlayers=3)
 
+    assert scope_outputs.attrs["scope_product"] == "scope_workflow"
     assert scope_outputs.attrs["scope_torch_product"] == "scope_workflow"
+    assert scope_outputs.attrs["scope_components"] == "reflectance,reflectance_directional,reflectance_profile"
     assert scope_outputs.attrs["scope_torch_components"] == "reflectance,reflectance_directional,reflectance_profile"
     assert np.allclose(scope_outputs["rsot"].values, reflectance_outputs["rsot"].values)
     assert np.allclose(scope_outputs["reflectance_directional_refl_"].values, directional_outputs["refl_"].values)
@@ -1645,7 +1648,7 @@ def test_scope_grid_runner_run_scope_dataset_honours_fluorescence_option_attrs()
     directional_outputs = runner.run_directional_fluorescence_dataset(module, varmap=varmap, nlayers=3)
     profile_outputs = runner.run_fluorescence_profiles_dataset(module, varmap=varmap, nlayers=3)
 
-    assert "fluorescence" in scope_outputs.attrs["scope_torch_components"]
+    assert "fluorescence" in scope_outputs.attrs["scope_components"]
     assert np.allclose(scope_outputs["LoF_"].values, fluorescence_outputs["LoF_"].values)
     assert np.allclose(scope_outputs["fluorescence_directional_LoF_"].values, directional_outputs["LoF_"].values)
     assert np.allclose(scope_outputs["fluorescence_profile_Fmin_"].values, profile_outputs["Fmin_"].values)
@@ -1705,7 +1708,7 @@ def test_scope_grid_runner_run_scope_dataset_scope_options_override_dataset_attr
     directional_outputs = runner.run_directional_thermal_dataset(module, varmap=varmap, nlayers=3)
     profile_outputs = runner.run_thermal_profiles_dataset(module, varmap=varmap, nlayers=3)
 
-    assert "thermal" in scope_outputs.attrs["scope_torch_components"]
+    assert "thermal" in scope_outputs.attrs["scope_components"]
     assert scope_outputs.attrs["calc_planck"] == 1
     assert np.allclose(scope_outputs["Lot_"].values, thermal_outputs["Lot_"].values)
     assert np.allclose(scope_outputs["thermal_directional_Lot_"].values, directional_outputs["Lot_"].values)
@@ -2141,7 +2144,7 @@ def test_scope_grid_runner_energy_balance_thermal_dataset_preserves_stable_outpu
     )
 
     assert dataset_outputs.attrs["site"] == "coupled-execution-mode"
-    assert dataset_outputs.attrs["scope_torch_product"] == "energy_balance_thermal"
+    assert dataset_outputs.attrs["scope_product"] == "energy_balance_thermal"
     assert dataset_outputs["Lot_"].dims == ("y", "x", "time", "thermal_wavelength")
     assert dataset_outputs["Tcu"].dims == ("y", "x", "time", "layer")
     assert np.allclose(dataset_outputs["Lot_"].values, outputs["Lot_"].cpu().numpy().reshape(1, 1, 3, -1))

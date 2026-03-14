@@ -14,7 +14,7 @@ def _ensure_src_on_path() -> None:
 
 _ensure_src_on_path()
 
-from scope_torch.cli.fetch_upstream import main
+from scope.cli.fetch_upstream import main
 
 
 if __name__ == "__main__":

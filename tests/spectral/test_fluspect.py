@@ -3,7 +3,7 @@ import pytest
 import torch
 from scipy.special import exp1
 
-from scope_torch.spectral.fluspect import (
+from scope.spectral.fluspect import (
     FluspectModel,
     LeafBioBatch,
     OptiPar,
