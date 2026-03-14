@@ -19,7 +19,7 @@ Asset-backed constructors expect upstream SCOPE resources such as:
 
 The intended operational path is:
 
-1. fetch the pinned upstream checkout with `scope-torch-fetch-upstream`
+1. fetch the pinned upstream checkout with `scope-fetch-upstream`
 2. keep that checkout version-controlled or provisioned by deployment automation
 3. pass `scope_root_path=...` explicitly if the checkout is not under `./upstream/SCOPE`
 
@@ -37,6 +37,23 @@ The documentation surface is also treated as a build artifact:
 - example scripts are executed in the test suite
 - the docs site can be built locally with `mkdocs build --strict`
 - CI should keep docs build failures separate from physics regressions
+
+## Release and Distribution
+
+For maintainers, the repository now has separate operational paths for packaging and docs deployment:
+
+- `.github/workflows/release.yml`
+  Builds source and wheel distributions, runs `twine check`, and supports publishing to TestPyPI or PyPI through GitHub environments.
+- `.github/workflows/docs.yml`
+  Builds the MkDocs site and deploys it to GitHub Pages.
+
+Local release verification uses:
+
+```bash
+python -m pip install -e ".[release]"
+python -m build
+python -m twine check dist/*
+```
 
 ## Current Operational Tradeoffs
 

@@ -1,10 +1,10 @@
-# SCOPE Torch
+# SCOPE
 
 PyTorch-first implementation of the SCOPE canopy radiative transfer model for reflectance, fluorescence, thermal radiance, and coupled energy-balance workflows.
 
 ## What It Is
 
-`scope_torch` is designed for users who need:
+`scope` is designed for users who need:
 
 - asset-backed SCOPE physics in Python
 - batched ROI/time execution on `xarray` datasets
@@ -25,8 +25,8 @@ The current implementation supports:
 ### 1. Clone the repository
 
 ```bash
-git clone <your-repo-url> SCOPE_Torch
-cd SCOPE_Torch
+git clone <your-repo-url> scope
+cd scope
 ```
 
 ### 2. Fetch the pinned upstream SCOPE assets
@@ -38,7 +38,7 @@ python scripts/fetch_upstream_scope.py
 If you installed the package in an environment already, the same helper is available as:
 
 ```bash
-scope-torch-fetch-upstream
+scope-fetch-upstream
 ```
 
 ### 3. Create an environment and install
@@ -106,20 +106,20 @@ Expected output:
 
 For most users, the preferred entry points are:
 
-- [`ScopeGridRunner.run_scope_dataset(...)`](src/scope_torch/runners/grid.py)
+- [`ScopeGridRunner.run_scope_dataset(...)`](src/scope/runners/grid.py)
   High-level reflectance/fluorescence/thermal workflow dispatch from prepared `xarray` inputs.
-- [`prepare_scope_input_dataset(...)`](src/scope_torch/io/prepare.py)
+- [`prepare_scope_input_dataset(...)`](src/scope/io/prepare.py)
   Build a runner-ready dataset from weather, observation, and Sentinel-2 bio inputs.
-- [`write_netcdf_dataset(...)`](src/scope_torch/io/export.py)
+- [`write_netcdf_dataset(...)`](src/scope/io/export.py)
   Persist prepared or simulated outputs to NetCDF with safe backend selection and compression handling.
 
 For direct lower-level use:
 
-- [`FluspectModel`](src/scope_torch/spectral/fluspect.py)
-- [`CanopyReflectanceModel`](src/scope_torch/canopy/reflectance.py)
-- [`CanopyFluorescenceModel`](src/scope_torch/canopy/fluorescence.py)
-- [`CanopyThermalRadianceModel`](src/scope_torch/canopy/thermal.py)
-- [`CanopyEnergyBalanceModel`](src/scope_torch/energy/balance.py)
+- [`FluspectModel`](src/scope/spectral/fluspect.py)
+- [`CanopyReflectanceModel`](src/scope/canopy/reflectance.py)
+- [`CanopyFluorescenceModel`](src/scope/canopy/fluorescence.py)
+- [`CanopyThermalRadianceModel`](src/scope/canopy/thermal.py)
+- [`CanopyEnergyBalanceModel`](src/scope/energy/balance.py)
 
 ## Documentation Map
 
@@ -140,9 +140,11 @@ mkdocs build --strict
 
 ## Production Notes
 
-- Asset-backed constructors such as `from_scope_assets(...)` require an upstream SCOPE checkout. The recommended path is `scope-torch-fetch-upstream`.
+- Asset-backed constructors such as `from_scope_assets(...)` require an upstream SCOPE checkout. The recommended path is `scope-fetch-upstream`.
 - The default CI suite runs parity tests in live-or-pregenerated mode. On machines without MATLAB, the tests compare against checked-in MATLAB fixtures.
 - The self-hosted GPU and live-MATLAB lanes remain optional operational lanes; see [docs/benchmark-policy.md](docs/benchmark-policy.md).
+- Documentation can be built locally with `mkdocs build --strict` and is deployed by the dedicated GitHub Pages workflow.
+- Distribution artifacts can be built locally with `python -m build` and validated with `python -m twine check dist/*`.
 
 ## Testing
 
@@ -158,3 +160,10 @@ The strongest automated checks currently include:
 - ROI/time runner consistency tests
 - committed scene and time-series benchmark summary regression tests
 - live-or-pregenerated MATLAB parity tests for the single-scene and time-series benchmark gates
+
+## Release Workflows
+
+- `.github/workflows/release.yml`
+  Builds `sdist` and wheel artifacts, validates them with `twine check`, and supports publishing to TestPyPI or PyPI through GitHub Actions environments.
+- `.github/workflows/docs.yml`
+  Builds the MkDocs site and deploys it to GitHub Pages.

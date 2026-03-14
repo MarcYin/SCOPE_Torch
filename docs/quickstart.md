@@ -5,8 +5,8 @@ This page shows the shortest path from a fresh checkout to a successful run.
 ## 1. Install
 
 ```bash
-git clone <your-repo-url> SCOPE_Torch
-cd SCOPE_Torch
+git clone <your-repo-url> scope
+cd scope
 python scripts/fetch_upstream_scope.py
 python -m venv .venv
 source .venv/bin/activate
@@ -79,7 +79,7 @@ Typical output:
 If you already have weather, observation, and Sentinel-2 bio inputs, build a runner-ready dataset with:
 
 ```bash
-scope-torch-prepare \
+scope-prepare \
   --weather weather.nc \
   --observation observation.nc \
   --bio-npz post_bio.npz \

@@ -58,7 +58,7 @@ What it demonstrates:
 Command:
 
 ```bash
-scope-torch-prepare --help
+scope-prepare --help
 ```
 
 Equivalent source-tree command:

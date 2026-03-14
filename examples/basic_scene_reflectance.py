@@ -9,12 +9,12 @@ import pandas as pd
 import torch
 import xarray as xr
 
-from scope_torch import SimulationConfig, ScopeGridRunner, campbell_lidf
-from scope_torch.data import ScopeGridDataModule
+from scope import SimulationConfig, ScopeGridRunner, campbell_lidf
+from scope.data import ScopeGridDataModule
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run a minimal single-scene reflectance example with scope_torch.")
+    parser = argparse.ArgumentParser(description="Run a minimal single-scene reflectance example with scope.")
     parser.add_argument("--scope-root", help="Optional upstream SCOPE root. Defaults to ./upstream/SCOPE when available.")
     parser.add_argument("--device", default="cpu", help="Torch device.")
     parser.add_argument("--dtype", choices=("float32", "float64"), default="float64", help="Torch dtype.")
@@ -48,7 +48,7 @@ def build_dataset() -> xr.Dataset:
 def summarize(outputs: xr.Dataset) -> dict[str, object]:
     rsot = outputs["rsot"].isel(y=0, x=0, time=0)
     summary = {
-        "product": outputs.attrs["scope_torch_product"],
+        "product": outputs.attrs["scope_product"],
         "dims": {name: int(size) for name, size in outputs.sizes.items()},
         "variables": sorted(outputs.data_vars),
         "rsot_650nm": float(rsot.sel(wavelength=650.0, method="nearest")),

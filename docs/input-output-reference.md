@@ -162,8 +162,8 @@ Assembled workflow datasets preserve:
 
 - original `xarray` coordinates where compatible
 - workflow attrs such as `calc_fluor` and `calc_directional`
-- `scope_torch_product`
-- `scope_torch_components`
+- `scope_product`
+- `scope_components`
 
 ## Recommended Runtime Pattern
 

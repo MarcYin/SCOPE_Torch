@@ -9,8 +9,8 @@ import pandas as pd
 import torch
 import xarray as xr
 
-from scope_torch import SimulationConfig, ScopeGridRunner, campbell_lidf
-from scope_torch.data import ScopeGridDataModule
+from scope import SimulationConfig, ScopeGridRunner, campbell_lidf
+from scope.data import ScopeGridDataModule
 
 
 def parse_args() -> argparse.Namespace:
@@ -71,8 +71,8 @@ def summarize(outputs: xr.Dataset) -> dict[str, object]:
     directional = outputs["reflectance_directional_refl_"]
     profile = outputs["fluorescence_profile_Fmin_"]
     summary = {
-        "product": outputs.attrs["scope_torch_product"],
-        "components": outputs.attrs["scope_torch_components"].split(","),
+        "product": outputs.attrs["scope_product"],
+        "components": outputs.attrs["scope_components"].split(","),
         "dims": {name: int(size) for name, size in outputs.sizes.items()},
         "rsot_650nm_t0": float(rsot.sel(wavelength=650.0, method="nearest")),
         "LoF_peak_t0": float(lof.max().item()),

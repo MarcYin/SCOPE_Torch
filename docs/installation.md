@@ -6,7 +6,7 @@ Required:
 
 - Python `>=3.10`
 - `git`
-- the `scope_torch` source tree
+- the `scope` source tree
 
 Optional:
 
@@ -19,8 +19,8 @@ Optional:
 Clone the repo and fetch the pinned upstream SCOPE checkout:
 
 ```bash
-git clone <your-repo-url> SCOPE_Torch
-cd SCOPE_Torch
+git clone <your-repo-url> scope
+cd scope
 python scripts/fetch_upstream_scope.py
 ```
 
@@ -42,8 +42,8 @@ python -m pip install -e ".[docs]"
 If you want the installed command-line helpers:
 
 ```bash
-scope-torch-fetch-upstream --help
-scope-torch-prepare --help
+scope-fetch-upstream --help
+scope-prepare --help
 ```
 
 ## Runtime Asset Requirement
@@ -84,7 +84,7 @@ PYTHONPATH=src python -m pytest -q
 
 ## GPU Notes
 
-`scope_torch` uses standard PyTorch device selection. For GPU usage:
+`scope` uses standard PyTorch device selection. For GPU usage:
 
 1. Install a CUDA-enabled PyTorch build appropriate for your platform.
 2. Pass `device="cuda"` in `SimulationConfig` or the relevant model constructor.

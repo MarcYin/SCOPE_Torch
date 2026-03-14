@@ -1,6 +1,6 @@
 # Model Mechanics
 
-This page explains how the current homogeneous-canopy `scope_torch` stack is assembled.
+This page explains how the current homogeneous-canopy `scope` stack is assembled.
 
 ## Physical Stack
 

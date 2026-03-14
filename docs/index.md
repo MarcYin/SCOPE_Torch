@@ -1,6 +1,6 @@
-# SCOPE Torch
+# SCOPE
 
-`scope_torch` is a PyTorch-first implementation of the SCOPE canopy radiative transfer model for:
+`scope` is a PyTorch-first implementation of the SCOPE canopy radiative transfer model for:
 
 - reflectance
 - fluorescence

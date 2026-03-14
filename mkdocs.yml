@@ -1,6 +1,6 @@
-site_name: SCOPE Torch
+site_name: SCOPE
 site_description: PyTorch-first implementation of the SCOPE canopy radiative transfer model.
-repo_name: SCOPE_Torch
+repo_name: scope
 
 theme:
   name: material
