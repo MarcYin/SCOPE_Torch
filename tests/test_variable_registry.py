@@ -43,6 +43,13 @@ def test_search_variables_handles_prefixed_leaf_outputs() -> None:
     assert "sunlit_*" in names
 
 
+def test_search_variables_exposes_relationship_notes() -> None:
+    matches = search_variables("Rntot")
+
+    assert matches
+    assert matches[0].relationship == "Rntot = Rnctot + Rnstot"
+
+
 def test_variable_glossary_doc_is_generated_from_registry() -> None:
     expected = render_variable_markdown()
     actual = (REPO_ROOT / "docs" / "variable-glossary.md").read_text(encoding="utf-8")

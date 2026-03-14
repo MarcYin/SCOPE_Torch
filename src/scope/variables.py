@@ -13,6 +13,7 @@ class VariableDefinition:
     meaning: str
     workflows: tuple[str, ...] = ()
     aliases: tuple[str, ...] = ()
+    relationship: str = ""
     notes: str = ""
 
     def search_blob(self) -> str:
@@ -22,6 +23,7 @@ class VariableDefinition:
             self.category,
             self.units,
             self.meaning,
+            self.relationship,
             self.notes,
             *self.workflows,
             *self.aliases,
@@ -41,6 +43,7 @@ def _v(
     meaning: str,
     workflows: Sequence[str] = (),
     aliases: Sequence[str] = (),
+    relationship: str = "",
     notes: str = "",
 ) -> VariableDefinition:
     return VariableDefinition(
@@ -51,6 +54,7 @@ def _v(
         meaning=meaning,
         workflows=tuple(workflows),
         aliases=tuple(aliases),
+        relationship=relationship,
         notes=notes,
     )
 
@@ -84,7 +88,7 @@ VARIABLES: tuple[VariableDefinition, ...] = (
     _v("Cp", kind="input", category="leaf biochemistry", units="g cm-2", meaning="Protein content parameter for extended leaf optics."),
     _v("N", kind="input", category="leaf biochemistry", units="-", meaning="Leaf mesophyll structure parameter in PROSPECT/FLUSPECT."),
     _v("fqe", kind="input", category="leaf biochemistry", units="-", meaning="Leaf fluorescence quantum efficiency scaling used to build fluorescence source terms.", aliases=("fluorescence efficiency",)),
-    _v("ala", kind="input", category="leaf structure", units="deg", meaning="Leaf inclination angle or Campbell mean leaf angle input used to derive the LIDF.", aliases=("LIDFa",)),
+    _v("ala", kind="input", category="canopy structure", units="deg", meaning="Mean leaf angle parameter used to define the canopy leaf angle distribution function (LIDF).", aliases=("LIDFa",), relationship="Controls the overall canopy inclination distribution used by the LIDF."),
     _v("LAI", kind="input", category="canopy structure", units="m2 m-2", meaning="Leaf area index."),
     _v("tts", kind="input", category="geometry", units="deg", meaning="Solar zenith angle.", aliases=("sun zenith",)),
     _v("tto", kind="input", category="geometry", units="deg", meaning="Viewing zenith angle.", aliases=("observer zenith",)),
@@ -134,8 +138,8 @@ VARIABLES: tuple[VariableDefinition, ...] = (
     _v("dt_seconds", kind="input", category="soil", units="s", meaning="Time-step length used by transient soil heat treatment."),
     _v("leaf_refl", kind="output", category="reflectance", units="-", meaning="Leaf hemispherical reflectance from FLUSPECT."),
     _v("leaf_tran", kind="output", category="reflectance", units="-", meaning="Leaf hemispherical transmittance from FLUSPECT."),
-    _v("rsot", kind="output", category="reflectance", units="-", meaning="Total top-of-canopy reflectance factor in the observation direction.", aliases=("apparent reflectance", "reflectance.csv")),
-    _v("rso", kind="output", category="reflectance", units="-", meaning="Bidirectional reflectance factor.", aliases=("BRF",), notes="Matches the original SCOPE rso definition."),
+    _v("rsot", kind="output", category="reflectance", units="-", meaning="Total top-of-canopy reflectance factor in the observation direction.", aliases=("apparent reflectance", "reflectance.csv"), relationship="rsot = rsost + rsodt"),
+    _v("rso", kind="output", category="reflectance", units="-", meaning="Bidirectional reflectance factor.", aliases=("BRF",), relationship="rso = rsos + rsod", notes="Matches the original SCOPE rso definition."),
     _v("rsd", kind="output", category="reflectance", units="-", meaning="Directional-hemispherical reflectance factor.", aliases=("DHRF",)),
     _v("rdd", kind="output", category="reflectance", units="-", meaning="Bi-hemispherical reflectance factor.", aliases=("BHRF",)),
     _v("rdo", kind="output", category="reflectance", units="-", meaning="Hemispherical-directional reflectance factor.", aliases=("HDRF",)),
@@ -154,7 +158,7 @@ VARIABLES: tuple[VariableDefinition, ...] = (
     _v("EoutF_", kind="output", category="fluorescence", units="W m-2 um-1", meaning="Top-of-canopy hemispherically integrated fluorescence.", aliases=("fluorescence_hemis.csv",)),
     _v("EoutFrc_", kind="output", category="fluorescence", units="W m-2 um-1", meaning="Reabsorption-corrected hemispherical fluorescence spectrum.", aliases=("fluorescence_ReabsCorr.csv",)),
     _v("Femleaves_", kind="output", category="fluorescence", units="W m-2 um-1", meaning="Fluorescence emitted by all leaves before canopy escape losses.", aliases=("fluorescence_AllLeaves.csv",)),
-    _v("sigmaF", kind="output", category="fluorescence", units="-", meaning="Fluorescence escape probability.", aliases=("sigmaF.csv",)),
+    _v("sigmaF", kind="output", category="fluorescence", units="-", meaning="Fluorescence escape probability.", aliases=("sigmaF.csv",), relationship="sigmaF = pi * LoF_ / EoutFrc_"),
     _v("F685", kind="output", category="fluorescence", units="W m-2 um-1 sr-1", meaning="First fluorescence peak radiance.", aliases=("F_1stpeak",)),
     _v("wl685", kind="output", category="fluorescence", units="nm", meaning="Wavelength of the first fluorescence peak.", aliases=("wl_1stpeak",)),
     _v("F740", kind="output", category="fluorescence", units="W m-2 um-1 sr-1", meaning="Second fluorescence peak radiance.", aliases=("F_2ndpeak",)),
@@ -186,19 +190,19 @@ VARIABLES: tuple[VariableDefinition, ...] = (
     _v("shaded_rcw", kind="output", category="physiology", units="s m-1", meaning="Canopy water-vapor resistance of shaded leaves."),
     _v("sunlit_eta", kind="output", category="physiology", units="-", meaning="Fluorescence efficiency term returned by the sunlit leaf biochemistry solve."),
     _v("shaded_eta", kind="output", category="physiology", units="-", meaning="Fluorescence efficiency term returned by the shaded leaf biochemistry solve."),
-    _v("Rnctot", kind="output", category="energy balance", units="W m-2", meaning="Net radiation of the canopy.", aliases=("fluxes.csv",)),
-    _v("lEctot", kind="output", category="energy balance", units="W m-2", meaning="Latent heat flux of the canopy (transpiration)."),
-    _v("Hctot", kind="output", category="energy balance", units="W m-2", meaning="Sensible heat flux of the canopy."),
+    _v("Rnctot", kind="output", category="energy balance", units="W m-2", meaning="Net radiation of the canopy.", aliases=("fluxes.csv",), relationship="Rnctot = Rnuc + Rnhc"),
+    _v("lEctot", kind="output", category="energy balance", units="W m-2", meaning="Latent heat flux of the canopy (transpiration).", relationship="lEctot = lEcu + lEch"),
+    _v("Hctot", kind="output", category="energy balance", units="W m-2", meaning="Sensible heat flux of the canopy.", relationship="Hctot = Hcu + Hch"),
     _v("Actot", kind="output", category="energy balance", units="umol m-2 s-1", meaning="Net photosynthesis of the canopy.", aliases=("Photosynthesis",)),
     _v("Tcave", kind="output", category="energy balance", units="degC", meaning="Average canopy temperature."),
-    _v("Rnstot", kind="output", category="energy balance", units="W m-2", meaning="Net radiation of the soil."),
-    _v("lEstot", kind="output", category="energy balance", units="W m-2", meaning="Latent heat flux of the soil (evaporation)."),
-    _v("Hstot", kind="output", category="energy balance", units="W m-2", meaning="Sensible heat flux of the soil."),
+    _v("Rnstot", kind="output", category="energy balance", units="W m-2", meaning="Net radiation of the soil.", relationship="Rnstot = Rnus + Rnhs"),
+    _v("lEstot", kind="output", category="energy balance", units="W m-2", meaning="Latent heat flux of the soil (evaporation).", relationship="lEstot = lEsu + lEsh"),
+    _v("Hstot", kind="output", category="energy balance", units="W m-2", meaning="Sensible heat flux of the soil.", relationship="Hstot = Hsu + Hsh"),
     _v("Gtot", kind="output", category="energy balance", units="W m-2", meaning="Soil heat flux."),
     _v("Tsave", kind="output", category="energy balance", units="degC", meaning="Average soil temperature."),
-    _v("Rntot", kind="output", category="energy balance", units="W m-2", meaning="Total net radiation."),
-    _v("lEtot", kind="output", category="energy balance", units="W m-2", meaning="Total latent heat flux."),
-    _v("Htot", kind="output", category="energy balance", units="W m-2", meaning="Total sensible heat flux."),
+    _v("Rntot", kind="output", category="energy balance", units="W m-2", meaning="Total net radiation.", relationship="Rntot = Rnctot + Rnstot"),
+    _v("lEtot", kind="output", category="energy balance", units="W m-2", meaning="Total latent heat flux.", relationship="lEtot = lEctot + lEstot"),
+    _v("Htot", kind="output", category="energy balance", units="W m-2", meaning="Total sensible heat flux.", relationship="Htot = Hctot + Hstot"),
     _v("raa", kind="output", category="resistance", units="s m-1", meaning="Aerodynamic resistance above the canopy."),
     _v("raws", kind="output", category="resistance", units="s m-1", meaning="Aerodynamic resistance within the soil/canopy lower boundary layer.", aliases=("within-soil aerodynamic resistance",)),
     _v("rawc", kind="output", category="resistance", units="s m-1", meaning="Aerodynamic resistance within the canopy air space."),
@@ -237,23 +241,23 @@ VARIABLES = VARIABLES + (
     _v("MoninObukhov", kind="option", category="workflow", units="0/1", meaning="Flag controlling Monin-Obukhov stability correction usage."),
     _v("save_spectral", kind="option", category="workflow", units="0/1", meaning="Upstream flag requesting spectral outputs to be saved."),
     _v("soilspectrum", kind="option", category="workflow", units="index", meaning="Upstream soil-spectrum mode flag or selector.", aliases=("soil_spectrum option",)),
-    _v("tdd", kind="output", category="reflectance", units="-", meaning="Diffuse transmittance for diffuse incident radiation through the canopy."),
-    _v("tsd", kind="output", category="reflectance", units="-", meaning="Direct-to-diffuse canopy transmittance for solar illumination."),
-    _v("tdo", kind="output", category="reflectance", units="-", meaning="Diffuse transmittance from canopy layers toward the observation direction."),
-    _v("rsos", kind="output", category="reflectance", units="-", meaning="Bidirectional reflectance contribution from the hotspot or single-scattering term."),
-    _v("rsod", kind="output", category="reflectance", units="-", meaning="Bidirectional reflectance contribution from the diffuse multiple-scattering term."),
+    _v("tdd", kind="output", category="reflectance", units="-", meaning="Diffuse transmittance for diffuse incident radiation through the canopy.", relationship="Diffuse in -> diffuse out canopy transmittance term."),
+    _v("tsd", kind="output", category="reflectance", units="-", meaning="Direct-to-diffuse canopy transmittance for solar illumination.", relationship="Direct sun -> diffuse canopy transmittance term."),
+    _v("tdo", kind="output", category="reflectance", units="-", meaning="Diffuse transmittance from canopy layers toward the observation direction.", relationship="Diffuse canopy field -> observation-direction transmittance term."),
+    _v("rsos", kind="output", category="reflectance", units="-", meaning="Bidirectional reflectance contribution from the hotspot or single-scattering term.", relationship="Direct/hotspot contribution to rso."),
+    _v("rsod", kind="output", category="reflectance", units="-", meaning="Bidirectional reflectance contribution from the diffuse multiple-scattering term.", relationship="Diffuse multiple-scattering contribution to rso."),
     _v("rddt", kind="output", category="reflectance", units="-", meaning="Bi-hemispherical reflectance including the soil boundary condition."),
     _v("rsdt", kind="output", category="reflectance", units="-", meaning="Directional-hemispherical reflectance including the soil boundary condition."),
     _v("rdot", kind="output", category="reflectance", units="-", meaning="Hemispherical-directional reflectance including the soil boundary condition."),
-    _v("rsodt", kind="output", category="reflectance", units="-", meaning="Diffuse part of total bidirectional reflectance including the soil boundary condition."),
-    _v("rsost", kind="output", category="reflectance", units="-", meaning="Hotspot or direct part of total bidirectional reflectance including the soil boundary condition."),
-    _v("tss", kind="output", category="reflectance", units="-", meaning="Direct solar transmittance through the canopy.", aliases=("sun transmittance",)),
-    _v("too", kind="output", category="reflectance", units="-", meaning="Direct transmittance along the observation path.", aliases=("observer transmittance",)),
-    _v("tsstoo", kind="output", category="reflectance", units="-", meaning="Joint direct-transmittance term for the sun-observer hotspot path."),
+    _v("rsodt", kind="output", category="reflectance", units="-", meaning="Diffuse part of total bidirectional reflectance including the soil boundary condition.", relationship="Diffuse multiple-scattering part of rsot."),
+    _v("rsost", kind="output", category="reflectance", units="-", meaning="Hotspot or direct part of total bidirectional reflectance including the soil boundary condition.", relationship="Direct/hotspot part of rsot."),
+    _v("tss", kind="output", category="reflectance", units="-", meaning="Direct solar transmittance through the canopy.", aliases=("sun transmittance",), relationship="Beer-Lambert-like direct sun transmission term."),
+    _v("too", kind="output", category="reflectance", units="-", meaning="Direct transmittance along the observation path.", aliases=("observer transmittance",), relationship="Beer-Lambert-like observation-path transmission term."),
+    _v("tsstoo", kind="output", category="reflectance", units="-", meaning="Joint direct-transmittance term for the sun-observer hotspot path.", relationship="Combined direct sun and observation-path transmission term."),
     _v("rso_", kind="output", category="reflectance", units="-", meaning="Directional bidirectional reflectance factor on the requested angle grid.", aliases=("brdf_", "directional BRDF")),
-    _v("gammasdf", kind="output", category="transport coefficients", units="-", meaning="Canopy transport coefficient for downward diffuse coupling used by fluorescence and reflectance transport."),
-    _v("gammasdb", kind="output", category="transport coefficients", units="-", meaning="Canopy transport coefficient for upward diffuse coupling used by fluorescence and reflectance transport."),
-    _v("gammaso", kind="output", category="transport coefficients", units="-", meaning="Canopy transport coefficient for escape toward the observation direction."),
+    _v("gammasdf", kind="output", category="transport coefficients", units="-", meaning="Canopy transport coefficient for downward diffuse coupling used by fluorescence and reflectance transport.", relationship="Controls coupling from layer source terms into downward diffuse transport."),
+    _v("gammasdb", kind="output", category="transport coefficients", units="-", meaning="Canopy transport coefficient for upward diffuse coupling used by fluorescence and reflectance transport.", relationship="Controls coupling from layer source terms into upward diffuse transport."),
+    _v("gammaso", kind="output", category="transport coefficients", units="-", meaning="Canopy transport coefficient for escape toward the observation direction.", relationship="Controls coupling from layer source terms into observation-direction escape."),
     _v("Es_direct_", kind="output", category="profiles", units="W m-2 um-1", meaning="Direct shortwave irradiance profile at canopy interfaces."),
     _v("Emin_direct_", kind="output", category="profiles", units="W m-2 um-1", meaning="Downward shortwave flux profile originating from direct illumination."),
     _v("Eplu_direct_", kind="output", category="profiles", units="W m-2 um-1", meaning="Upward shortwave flux profile originating from direct illumination."),
@@ -271,18 +275,18 @@ VARIABLES = VARIABLES + (
     _v("shaded_eb_input", kind="output", category="solver diagnostics", units="hPa", meaning="Leaf-surface vapor-pressure boundary condition passed into the shaded leaf solve.", notes="Phase-lagged diagnostic; not the main same-state parity signal."),
     _v("sunlit_T_input", kind="output", category="solver diagnostics", units="degC", meaning="Leaf temperature passed into the sunlit leaf solve during the final iteration.", notes="Phase-lagged diagnostic; not the main same-state parity signal."),
     _v("shaded_T_input", kind="output", category="solver diagnostics", units="degC", meaning="Leaf temperature passed into the shaded leaf solve during the final iteration.", notes="Phase-lagged diagnostic; not the main same-state parity signal."),
-    _v("Rnuc_sw", kind="output", category="energy balance", units="W m-2", meaning="Sunlit canopy net shortwave radiation."),
-    _v("Rnhc_sw", kind="output", category="energy balance", units="W m-2", meaning="Shaded canopy net shortwave radiation."),
-    _v("Rnus_sw", kind="output", category="energy balance", units="W m-2", meaning="Sunlit soil net shortwave radiation."),
-    _v("Rnhs_sw", kind="output", category="energy balance", units="W m-2", meaning="Shaded soil net shortwave radiation."),
-    _v("Rnuct", kind="output", category="energy balance", units="W m-2", meaning="Sunlit canopy net thermal radiation."),
-    _v("Rnhct", kind="output", category="energy balance", units="W m-2", meaning="Shaded canopy net thermal radiation."),
-    _v("Rnust", kind="output", category="energy balance", units="W m-2", meaning="Sunlit soil net thermal radiation."),
-    _v("Rnhst", kind="output", category="energy balance", units="W m-2", meaning="Shaded soil net thermal radiation."),
-    _v("Rnuc", kind="output", category="energy balance", units="W m-2", meaning="Total net radiation of the sunlit canopy fraction."),
-    _v("Rnhc", kind="output", category="energy balance", units="W m-2", meaning="Total net radiation of the shaded canopy fraction."),
-    _v("Rnus", kind="output", category="energy balance", units="W m-2", meaning="Total net radiation of the sunlit soil fraction."),
-    _v("Rnhs", kind="output", category="energy balance", units="W m-2", meaning="Total net radiation of the shaded soil fraction."),
+    _v("Rnuc_sw", kind="output", category="energy balance", units="W m-2", meaning="Sunlit canopy net shortwave radiation.", relationship="Shortwave component of Rnuc."),
+    _v("Rnhc_sw", kind="output", category="energy balance", units="W m-2", meaning="Shaded canopy net shortwave radiation.", relationship="Shortwave component of Rnhc."),
+    _v("Rnus_sw", kind="output", category="energy balance", units="W m-2", meaning="Sunlit soil net shortwave radiation.", relationship="Shortwave component of Rnus."),
+    _v("Rnhs_sw", kind="output", category="energy balance", units="W m-2", meaning="Shaded soil net shortwave radiation.", relationship="Shortwave component of Rnhs."),
+    _v("Rnuct", kind="output", category="energy balance", units="W m-2", meaning="Sunlit canopy net thermal radiation.", relationship="Thermal component of Rnuc."),
+    _v("Rnhct", kind="output", category="energy balance", units="W m-2", meaning="Shaded canopy net thermal radiation.", relationship="Thermal component of Rnhc."),
+    _v("Rnust", kind="output", category="energy balance", units="W m-2", meaning="Sunlit soil net thermal radiation.", relationship="Thermal component of Rnus."),
+    _v("Rnhst", kind="output", category="energy balance", units="W m-2", meaning="Shaded soil net thermal radiation.", relationship="Thermal component of Rnhs."),
+    _v("Rnuc", kind="output", category="energy balance", units="W m-2", meaning="Total net radiation of the sunlit canopy fraction.", relationship="Rnuc = Rnuc_sw + Rnuct"),
+    _v("Rnhc", kind="output", category="energy balance", units="W m-2", meaning="Total net radiation of the shaded canopy fraction.", relationship="Rnhc = Rnhc_sw + Rnhct"),
+    _v("Rnus", kind="output", category="energy balance", units="W m-2", meaning="Total net radiation of the sunlit soil fraction.", relationship="Rnus = Rnus_sw + Rnust"),
+    _v("Rnhs", kind="output", category="energy balance", units="W m-2", meaning="Total net radiation of the shaded soil fraction.", relationship="Rnhs = Rnhs_sw + Rnhst"),
     _v("lEcu", kind="output", category="energy balance", units="W m-2", meaning="Latent heat flux of the sunlit canopy fraction."),
     _v("lEch", kind="output", category="energy balance", units="W m-2", meaning="Latent heat flux of the shaded canopy fraction."),
     _v("lEsu", kind="output", category="energy balance", units="W m-2", meaning="Latent heat flux of the sunlit soil fraction."),
@@ -291,8 +295,8 @@ VARIABLES = VARIABLES + (
     _v("Hch", kind="output", category="energy balance", units="W m-2", meaning="Sensible heat flux of the shaded canopy fraction."),
     _v("Hsu", kind="output", category="energy balance", units="W m-2", meaning="Sensible heat flux of the sunlit soil fraction."),
     _v("Hsh", kind="output", category="energy balance", units="W m-2", meaning="Sensible heat flux of the shaded soil fraction."),
-    _v("Gsu", kind="output", category="energy balance", units="W m-2", meaning="Soil heat flux associated with the sunlit soil fraction."),
-    _v("Gsh", kind="output", category="energy balance", units="W m-2", meaning="Soil heat flux associated with the shaded soil fraction."),
+    _v("Gsu", kind="output", category="energy balance", units="W m-2", meaning="Soil heat flux associated with the sunlit soil fraction.", relationship="Sunlit-soil contribution to Gtot."),
+    _v("Gsh", kind="output", category="energy balance", units="W m-2", meaning="Soil heat flux associated with the shaded soil fraction.", relationship="Shaded-soil contribution to Gtot."),
 )
 
 
@@ -385,14 +389,14 @@ def render_variable_markdown() -> str:
 
 def _render_table(items: Iterable[VariableDefinition]) -> list[str]:
     lines = [
-        "| Name | Units | Meaning | Workflows / aliases |",
-        "| --- | --- | --- | --- |",
+        "| Name | Units | Meaning | Relationship / formula | Workflows / aliases |",
+        "| --- | --- | --- | --- | --- |",
     ]
     for item in items:
         workflow_text = ", ".join(item.workflows)
         alias_text = ", ".join(item.aliases)
         meta = "; ".join(part for part in (workflow_text, alias_text, item.notes) if part)
         lines.append(
-            f"| `{item.name}` | {item.units} | {item.meaning} | {meta or '-'} |"
+            f"| `{item.name}` | {item.units} | {item.meaning} | {item.relationship or '-'} | {meta or '-'} |"
         )
     return lines

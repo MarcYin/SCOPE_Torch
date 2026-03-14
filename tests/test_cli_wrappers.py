@@ -123,6 +123,7 @@ def test_scope_module_variable_search_cli():
 
     assert "Rntot" in completed.stdout
     assert "Total net radiation" in completed.stdout
+    assert "relationship: Rntot = Rnctot + Rnstot" in completed.stdout
 
 
 def test_scope_module_run_cli_executes_minimal_reflectance_workflow(tmp_path: Path):

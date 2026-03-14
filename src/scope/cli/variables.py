@@ -57,6 +57,7 @@ def _render_text(rows: list[dict[str, object]]) -> str:
     for row in rows:
         aliases = ", ".join(row["aliases"])
         workflows = ", ".join(row["workflows"])
+        relationship = str(row.get("relationship", "")).strip()
         meta = "; ".join(part for part in (workflows, aliases, row["notes"]) if part)
         header = (
             f"{row['name']:<{name_width}}  "
@@ -66,6 +67,8 @@ def _render_text(rows: list[dict[str, object]]) -> str:
         )
         lines.append(header)
         lines.append(f"  {row['meaning']}")
+        if relationship:
+            lines.append(f"  relationship: {relationship}")
         if meta:
             lines.append(f"  {meta}")
         lines.append("")
