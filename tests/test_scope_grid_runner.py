@@ -1540,6 +1540,178 @@ def test_scope_grid_runner_fluorescence_profiles_dataset_preserves_layer_dims():
     assert np.allclose(dataset_outputs["layer_fluorescence"].values, expected_layer)
 
 
+def test_scope_grid_runner_run_scope_dataset_honours_reflectance_option_attrs():
+    device = torch.device("cpu")
+    dtype = torch.float64
+    spectral = _spectral(device, dtype)
+    optipar = _optipar(spectral)
+    fluspect = FluspectModel(spectral, optipar, dtype=dtype)
+    lidf = campbell_lidf(57.0, device=device, dtype=dtype)
+    sail = FourSAILModel(lidf=lidf)
+
+    times = pd.date_range("2020-07-01", periods=2, freq="h")
+    nwl = spectral.wlP.numel()
+    rng = np.random.default_rng(19)
+    data = xr.Dataset(
+        {
+            "Cab": (("y", "x", "time"), np.full((1, 1, 2), 45.0)),
+            "Cw": (("y", "x", "time"), np.full((1, 1, 2), 0.01)),
+            "Cdm": (("y", "x", "time"), np.full((1, 1, 2), 0.012)),
+            "LAI": (("y", "x", "time"), np.array([[[2.0, 2.5]]])),
+            "tts": (("y", "x", "time"), np.full((1, 1, 2), 30.0)),
+            "tto": (("y", "x", "time"), np.full((1, 1, 2), 20.0)),
+            "psi": (("y", "x", "time"), np.array([[[5.0, 15.0]]])),
+            "soil_refl": (("y", "x", "time", "wavelength"), rng.random((1, 1, 2, nwl)) * 0.2 + 0.1),
+            "Esun_sw": (("y", "x", "time", "wavelength"), np.full((1, 1, 2, nwl), 900.0)),
+            "Esky_sw": (("y", "x", "time", "wavelength"), np.full((1, 1, 2, nwl), 120.0)),
+        },
+        coords={
+            "y": np.arange(1),
+            "x": np.arange(1),
+            "time": times,
+            "wavelength": np.arange(nwl),
+            "direction": np.arange(2),
+            "directional_tto": ("direction", np.array([10.0, 30.0])),
+            "directional_psi": ("direction", np.array([5.0, 45.0])),
+        },
+        attrs={"calc_directional": 1, "calc_vert_profiles": 1, "calc_fluor": 0, "calc_planck": 0},
+    )
+
+    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    module = ScopeGridDataModule(data, cfg, required_vars=list(data.data_vars))
+    runner = ScopeGridRunner(fluspect, sail, lidf=lidf)
+    varmap = {name: name for name in data.data_vars}
+
+    scope_outputs = runner.run_scope_dataset(module, varmap=varmap, nlayers=3)
+    reflectance_outputs = runner.run_dataset(module, varmap=varmap, nlayers=3)
+    directional_outputs = runner.run_directional_reflectance_dataset(module, varmap=varmap, nlayers=3)
+    profile_outputs = runner.run_reflectance_profiles_dataset(module, varmap=varmap, nlayers=3)
+
+    assert scope_outputs.attrs["scope_torch_product"] == "scope_workflow"
+    assert scope_outputs.attrs["scope_torch_components"] == "reflectance,reflectance_directional,reflectance_profile"
+    assert np.allclose(scope_outputs["rsot"].values, reflectance_outputs["rsot"].values)
+    assert np.allclose(scope_outputs["reflectance_directional_refl_"].values, directional_outputs["refl_"].values)
+    assert np.allclose(scope_outputs["reflectance_profile_Ps"].values, profile_outputs["Ps"].values)
+
+
+def test_scope_grid_runner_run_scope_dataset_honours_fluorescence_option_attrs():
+    device = torch.device("cpu")
+    dtype = torch.float64
+    lidf = campbell_lidf(57.0, device=device, dtype=dtype)
+    runner = ScopeGridRunner.from_scope_assets(lidf=lidf, device=device, dtype=dtype)
+    n_wle = runner.fluspect.spectral.wlE.numel()
+    n_wlp = runner.fluspect.spectral.wlP.numel()
+
+    times = pd.date_range("2020-07-01", periods=2, freq="h")
+    layers = np.array([10.0, 20.0, 30.0])
+    data = xr.Dataset(
+        {
+            "Cab": (("y", "x", "time"), np.full((1, 1, 2), 45.0)),
+            "Cw": (("y", "x", "time"), np.full((1, 1, 2), 0.01)),
+            "Cdm": (("y", "x", "time"), np.full((1, 1, 2), 0.012)),
+            "fqe": (("y", "x", "time"), np.full((1, 1, 2), 0.01)),
+            "LAI": (("y", "x", "time"), np.array([[[2.0, 2.5]]])),
+            "tts": (("y", "x", "time"), np.full((1, 1, 2), 30.0)),
+            "tto": (("y", "x", "time"), np.full((1, 1, 2), 20.0)),
+            "psi": (("y", "x", "time"), np.array([[[5.0, 15.0]]])),
+            "soil_spectrum": (("y", "x", "time"), np.array([[[1.0, 2.0]]])),
+            "Esun_": (("y", "x", "time", "excitation_wavelength"), np.full((1, 1, 2, n_wle), 1.0)),
+            "Esky_": (("y", "x", "time", "excitation_wavelength"), np.full((1, 1, 2, n_wle), 0.2)),
+            "Esun_sw": (("y", "x", "time", "wavelength"), np.full((1, 1, 2, n_wlp), 900.0)),
+            "Esky_sw": (("y", "x", "time", "wavelength"), np.full((1, 1, 2, n_wlp), 120.0)),
+            "etau": (("y", "x", "time", "layer"), np.full((1, 1, 2, 3), 0.01)),
+            "etah": (("y", "x", "time", "layer"), np.full((1, 1, 2, 3), 0.008)),
+        },
+        coords={
+            "y": np.arange(1),
+            "x": np.arange(1),
+            "time": times,
+            "layer": layers,
+            "wavelength": np.arange(n_wlp),
+            "excitation_wavelength": np.arange(n_wle),
+            "direction": np.arange(2),
+            "directional_tto": ("direction", np.array([15.0, 35.0])),
+            "directional_psi": ("direction", np.array([10.0, 60.0])),
+        },
+        attrs={"calc_directional": 1, "calc_vert_profiles": 1, "calc_fluor": 1, "calc_planck": 0},
+    )
+
+    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    module = ScopeGridDataModule(data, cfg, required_vars=list(data.data_vars))
+    varmap = {name: name for name in data.data_vars}
+
+    scope_outputs = runner.run_scope_dataset(module, varmap=varmap, nlayers=3)
+    fluorescence_outputs = runner.run_layered_fluorescence_dataset(module, varmap=varmap, nlayers=3)
+    directional_outputs = runner.run_directional_fluorescence_dataset(module, varmap=varmap, nlayers=3)
+    profile_outputs = runner.run_fluorescence_profiles_dataset(module, varmap=varmap, nlayers=3)
+
+    assert "fluorescence" in scope_outputs.attrs["scope_torch_components"]
+    assert np.allclose(scope_outputs["LoF_"].values, fluorescence_outputs["LoF_"].values)
+    assert np.allclose(scope_outputs["fluorescence_directional_LoF_"].values, directional_outputs["LoF_"].values)
+    assert np.allclose(scope_outputs["fluorescence_profile_Fmin_"].values, profile_outputs["Fmin_"].values)
+    assert np.allclose(scope_outputs["fluorescence_gammasdf"].values, fluorescence_outputs["gammasdf"].values)
+
+
+def test_scope_grid_runner_run_scope_dataset_scope_options_override_dataset_attrs_for_thermal():
+    device = torch.device("cpu")
+    dtype = torch.float64
+    lidf = campbell_lidf(57.0, device=device, dtype=dtype)
+    runner = ScopeGridRunner.from_scope_assets(lidf=lidf, device=device, dtype=dtype)
+    n_wlp = runner.fluspect.spectral.wlP.numel()
+
+    times = pd.date_range("2020-07-01", periods=2, freq="h")
+    layers = np.array([10.0, 20.0, 30.0])
+    data = xr.Dataset(
+        {
+            "Cab": (("y", "x", "time"), np.full((1, 1, 2), 45.0)),
+            "Cw": (("y", "x", "time"), np.full((1, 1, 2), 0.01)),
+            "Cdm": (("y", "x", "time"), np.full((1, 1, 2), 0.012)),
+            "LAI": (("y", "x", "time"), np.array([[[2.0, 2.5]]])),
+            "tts": (("y", "x", "time"), np.full((1, 1, 2), 30.0)),
+            "tto": (("y", "x", "time"), np.full((1, 1, 2), 20.0)),
+            "psi": (("y", "x", "time"), np.array([[[5.0, 15.0]]])),
+            "soil_spectrum": (("y", "x", "time"), np.array([[[1.0, 2.0]]])),
+            "Esun_sw": (("y", "x", "time", "wavelength"), np.full((1, 1, 2, n_wlp), 900.0)),
+            "Esky_sw": (("y", "x", "time", "wavelength"), np.full((1, 1, 2, n_wlp), 120.0)),
+            "Tcu": (("y", "x", "time", "layer"), np.full((1, 1, 2, 3), 25.0)),
+            "Tch": (("y", "x", "time", "layer"), np.full((1, 1, 2, 3), 23.0)),
+            "Tsu": (("y", "x", "time"), np.full((1, 1, 2), 27.0)),
+            "Tsh": (("y", "x", "time"), np.full((1, 1, 2), 21.0)),
+        },
+        coords={
+            "y": np.arange(1),
+            "x": np.arange(1),
+            "time": times,
+            "layer": layers,
+            "wavelength": np.arange(n_wlp),
+            "direction": np.arange(2),
+            "directional_tto": ("direction", np.array([15.0, 35.0])),
+            "directional_psi": ("direction", np.array([10.0, 60.0])),
+        },
+        attrs={"calc_directional": 0, "calc_vert_profiles": 0, "calc_fluor": 0, "calc_planck": 0},
+    )
+
+    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    module = ScopeGridDataModule(data, cfg, required_vars=list(data.data_vars))
+    varmap = {name: name for name in data.data_vars}
+
+    scope_outputs = runner.run_scope_dataset(
+        module,
+        varmap=varmap,
+        scope_options={"calc_planck": 1, "calc_directional": 1, "calc_vert_profiles": 1},
+        nlayers=3,
+    )
+    thermal_outputs = runner.run_thermal_dataset(module, varmap=varmap, nlayers=3)
+    directional_outputs = runner.run_directional_thermal_dataset(module, varmap=varmap, nlayers=3)
+    profile_outputs = runner.run_thermal_profiles_dataset(module, varmap=varmap, nlayers=3)
+
+    assert "thermal" in scope_outputs.attrs["scope_torch_components"]
+    assert scope_outputs.attrs["calc_planck"] == 1
+    assert np.allclose(scope_outputs["Lot_"].values, thermal_outputs["Lot_"].values)
+    assert np.allclose(scope_outputs["thermal_directional_Lot_"].values, directional_outputs["Lot_"].values)
+    assert np.allclose(scope_outputs["thermal_profile_Emint_"].values, profile_outputs["Emint_"].values)
+
+
 def test_scope_grid_runner_from_scope_assets_resolves_soil_spectrum():
     device = torch.device("cpu")
     dtype = torch.float64

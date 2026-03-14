@@ -1171,6 +1171,153 @@ class ScopeGridRunner:
             },
         )
 
+    def run_scope_dataset(
+        self,
+        data_module: ScopeGridDataModule,
+        *,
+        varmap: Mapping[str, str],
+        scope_options: Optional[Mapping[str, object]] = None,
+        directional_tto: Optional[torch.Tensor] = None,
+        directional_psi: Optional[torch.Tensor] = None,
+        hotspot_var: Optional[str] = None,
+        nlayers: Optional[int] = None,
+    ) -> xr.Dataset:
+        calc_directional = self._scope_option_flag(data_module, scope_options, "calc_directional")
+        calc_vert_profiles = self._scope_option_flag(data_module, scope_options, "calc_vert_profiles")
+        calc_fluor = self._scope_option_flag(data_module, scope_options, "calc_fluor")
+        calc_planck = self._scope_option_flag(data_module, scope_options, "calc_planck")
+        reflectance_varmap = self._workflow_reflectance_varmap(varmap)
+
+        datasets = [
+            self.run_dataset(
+                data_module,
+                varmap=varmap,
+                hotspot_var=hotspot_var,
+                nlayers=nlayers,
+            )
+        ]
+        components = ["reflectance"]
+
+        if calc_directional:
+            datasets.append(
+                self._prefixed_dataset(
+                    self.run_directional_reflectance_dataset(
+                        data_module,
+                        varmap=reflectance_varmap,
+                        directional_tto=directional_tto,
+                        directional_psi=directional_psi,
+                        hotspot_var=hotspot_var,
+                        nlayers=nlayers,
+                    ),
+                    "reflectance_directional",
+                )
+            )
+            components.append("reflectance_directional")
+
+        if calc_vert_profiles:
+            datasets.append(
+                self._prefixed_dataset(
+                    self.run_reflectance_profiles_dataset(
+                        data_module,
+                        varmap=reflectance_varmap,
+                        hotspot_var=hotspot_var,
+                        nlayers=nlayers,
+                    ),
+                    "reflectance_profile",
+                )
+            )
+            components.append("reflectance_profile")
+
+        if calc_fluor:
+            datasets.append(
+                self.run_layered_fluorescence_dataset(
+                    data_module,
+                    varmap=varmap,
+                    hotspot_var=hotspot_var,
+                    nlayers=nlayers,
+                )
+            )
+            components.append("fluorescence")
+
+            if calc_directional:
+                datasets.append(
+                    self._prefixed_dataset(
+                        self.run_directional_fluorescence_dataset(
+                            data_module,
+                            varmap=varmap,
+                            directional_tto=directional_tto,
+                            directional_psi=directional_psi,
+                            hotspot_var=hotspot_var,
+                            nlayers=nlayers,
+                        ),
+                        "fluorescence_directional",
+                    )
+                )
+                components.append("fluorescence_directional")
+
+            if calc_vert_profiles:
+                datasets.append(
+                    self._prefixed_dataset(
+                        self.run_fluorescence_profiles_dataset(
+                            data_module,
+                            varmap=varmap,
+                            hotspot_var=hotspot_var,
+                            nlayers=nlayers,
+                        ),
+                        "fluorescence_profile",
+                    )
+                )
+                components.append("fluorescence_profile")
+
+        if calc_planck:
+            datasets.append(
+                self.run_thermal_dataset(
+                    data_module,
+                    varmap=varmap,
+                    hotspot_var=hotspot_var,
+                    nlayers=nlayers,
+                )
+            )
+            components.append("thermal")
+
+            if calc_directional:
+                datasets.append(
+                    self._prefixed_dataset(
+                        self.run_directional_thermal_dataset(
+                            data_module,
+                            varmap=varmap,
+                            directional_tto=directional_tto,
+                            directional_psi=directional_psi,
+                            hotspot_var=hotspot_var,
+                            nlayers=nlayers,
+                        ),
+                        "thermal_directional",
+                    )
+                )
+                components.append("thermal_directional")
+
+            if calc_vert_profiles:
+                datasets.append(
+                    self._prefixed_dataset(
+                        self.run_thermal_profiles_dataset(
+                            data_module,
+                            varmap=varmap,
+                            hotspot_var=hotspot_var,
+                            nlayers=nlayers,
+                        ),
+                        "thermal_profile",
+                    )
+                )
+                components.append("thermal_profile")
+
+        return self._merge_workflow_datasets(
+            data_module,
+            datasets,
+            product="scope_workflow",
+            components=components,
+            scope_options=scope_options,
+        )
+
     def _outputs_to_dataset(
         self,
         data_module: ScopeGridDataModule,
@@ -1191,6 +1338,35 @@ class ScopeGridRunner:
             variable_coords=variable_coords,
             attrs={"scope_torch_product": product},
         )
+
+    def _merge_workflow_datasets(
+        self,
+        data_module: ScopeGridDataModule,
+        datasets: Sequence[xr.Dataset],
+        *,
+        product: str,
+        components: Sequence[str],
+        scope_options: Optional[Mapping[str, object]],
+    ) -> xr.Dataset:
+        if len(datasets) != len(components):
+            raise ValueError("datasets and components must have matching lengths")
+        merged = datasets[0]
+        for component, dataset in zip(components[1:], datasets[1:]):
+            conflicting = set(dataset.data_vars).intersection(merged.data_vars)
+            if conflicting:
+                dataset = dataset.rename({name: f"{component}_{name}" for name in conflicting})
+            merged = xr.merge([merged, dataset], compat="no_conflicts", combine_attrs="drop_conflicts")
+        attrs = dict(data_module.dataset.attrs)
+        if scope_options:
+            attrs.update(scope_options)
+        attrs["scope_torch_product"] = product
+        attrs["scope_torch_components"] = ",".join(components)
+        merged.attrs = attrs
+        return merged
+
+    def _prefixed_dataset(self, dataset: xr.Dataset, prefix: str) -> xr.Dataset:
+        rename_map = {name: f"{prefix}_{name}" for name in dataset.data_vars}
+        return dataset.rename(rename_map)
 
     def _directional_outputs_to_dataset(
         self,
@@ -1453,6 +1629,38 @@ class ScopeGridRunner:
         if tensor.numel() == 0:
             raise ValueError("Directional angle arrays must not be empty")
         return tensor
+
+    def _workflow_reflectance_varmap(self, varmap: Mapping[str, str]) -> Dict[str, str]:
+        resolved = dict(varmap)
+        if "Esun_sw" in varmap:
+            resolved["Esun_"] = varmap["Esun_sw"]
+        if "Esky_sw" in varmap:
+            resolved["Esky_"] = varmap["Esky_sw"]
+        return resolved
+
+    def _scope_option_flag(
+        self,
+        data_module: ScopeGridDataModule,
+        scope_options: Optional[Mapping[str, object]],
+        name: str,
+        *,
+        default: bool = False,
+    ) -> bool:
+        if scope_options and name in scope_options:
+            return self._as_bool(scope_options[name], default=default)
+        return self._as_bool(data_module.dataset.attrs.get(name, default), default=default)
+
+    def _as_bool(self, value: object, *, default: bool) -> bool:
+        if value is None:
+            return default
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "on"}:
+                return True
+            if normalized in {"0", "false", "no", "off"}:
+                return False
+            return default
+        return bool(value)
 
     def _profile_layer_count_from_tensor(self, value: torch.Tensor) -> int:
         tensor = torch.as_tensor(value)
