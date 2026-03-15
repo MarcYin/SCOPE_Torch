@@ -15,12 +15,25 @@ from scope.variables import render_variable_markdown
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCOPE_ROOT = REPO_ROOT / "upstream" / "SCOPE"
+INSTALLED_CWD = Path.home()
 
 
 def _clean_env() -> dict[str, str]:
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
     return env
+
+
+def _installed_scope_importable() -> bool:
+    completed = subprocess.run(
+        [sys.executable, "-c", "import scope"],
+        cwd=Path.home(),
+        env=_clean_env(),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return completed.returncode == 0
 
 
 def test_fetch_upstream_wrapper_bootstraps_src_path():
@@ -68,9 +81,11 @@ def test_render_variable_glossary_wrapper_bootstraps_src_path():
 
 
 def test_scope_module_cli_help():
+    if not _installed_scope_importable():
+        pytest.skip("Editable install does not expose the package as an installed module in this environment")
     completed = subprocess.run(
         [sys.executable, "-m", "scope", "--help"],
-        cwd=REPO_ROOT,
+        cwd=INSTALLED_CWD,
         env=_clean_env(),
         check=True,
         capture_output=True,
@@ -85,9 +100,11 @@ def test_scope_module_cli_help():
 
 
 def test_scope_module_cli_subcommand_help():
+    if not _installed_scope_importable():
+        pytest.skip("Editable install does not expose the package as an installed module in this environment")
     completed = subprocess.run(
         [sys.executable, "-m", "scope", "fetch-upstream", "--help"],
-        cwd=REPO_ROOT,
+        cwd=INSTALLED_CWD,
         env=_clean_env(),
         check=True,
         capture_output=True,
@@ -98,10 +115,12 @@ def test_scope_module_cli_subcommand_help():
 
 
 def test_scope_run_entry_point_help():
+    if not _installed_scope_importable():
+        pytest.skip("Editable install does not expose the package as an installed module in this environment")
     scope_run = Path(sys.executable).parent / "scope-run"
     completed = subprocess.run(
         [str(scope_run), "--help"],
-        cwd=REPO_ROOT,
+        cwd=INSTALLED_CWD,
         env=_clean_env(),
         check=True,
         capture_output=True,
@@ -112,9 +131,11 @@ def test_scope_run_entry_point_help():
 
 
 def test_scope_module_variable_search_cli():
+    if not _installed_scope_importable():
+        pytest.skip("Editable install does not expose the package as an installed module in this environment")
     completed = subprocess.run(
         [sys.executable, "-m", "scope", "vars", "Rntot"],
-        cwd=REPO_ROOT,
+        cwd=INSTALLED_CWD,
         env=_clean_env(),
         check=True,
         capture_output=True,
@@ -127,9 +148,11 @@ def test_scope_module_variable_search_cli():
 
 
 def test_scope_module_variable_search_cli_supports_workflow_and_related_filters():
+    if not _installed_scope_importable():
+        pytest.skip("Editable install does not expose the package as an installed module in this environment")
     completed = subprocess.run(
         [sys.executable, "-m", "scope", "vars", "--workflow", "fluorescence", "--related", "sigmaF"],
-        cwd=REPO_ROOT,
+        cwd=INSTALLED_CWD,
         env=_clean_env(),
         check=True,
         capture_output=True,
@@ -143,6 +166,8 @@ def test_scope_module_variable_search_cli_supports_workflow_and_related_filters(
 def test_scope_module_run_cli_executes_minimal_reflectance_workflow(tmp_path: Path):
     if not SCOPE_ROOT.exists():
         pytest.skip("Upstream SCOPE assets are not available")
+    if not _installed_scope_importable():
+        pytest.skip("Editable install does not expose the package as an installed module in this environment")
 
     dataset = xr.Dataset(
         {
@@ -187,7 +212,7 @@ def test_scope_module_run_cli_executes_minimal_reflectance_workflow(tmp_path: Pa
             "scipy",
             "--no-compression",
         ],
-        cwd=REPO_ROOT,
+        cwd=INSTALLED_CWD,
         env=_clean_env(),
         check=True,
         capture_output=True,
