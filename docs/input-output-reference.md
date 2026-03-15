@@ -31,6 +31,15 @@ from scope import validate_scope_dataset
 validate_scope_dataset(dataset, workflow="scope")
 ```
 
+For tensor-only production inference without `xarray`, prefer:
+
+- `ScopeInferenceModel`
+
+That surface accepts already-prepared tensor inputs and can return only selected fields such as:
+
+- `("rsot", "rso")`
+- `("energy.Rntot", "thermal.Lot_")`
+
 ## Common Dataset Dimensions
 
 The current runner surface uses these dimensions:
@@ -189,6 +198,15 @@ Assembled workflow datasets preserve:
   - `scope_kind`
   - `scope_relationship` when applicable
   - `scope_source_doc`
+
+NetCDF exports written with `write_netcdf_dataset(...)` additionally standardize:
+
+- `Conventions = CF-1.10`
+- dataset `title`
+- dataset `source`
+- upstream `references`
+- append-only `history`
+- coordinate axis metadata such as `time`, `x`, `y`, and `layer`
 
 ## Recommended Runtime Pattern
 

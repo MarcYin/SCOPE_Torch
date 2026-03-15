@@ -17,6 +17,16 @@ The workflow behavior is:
 - manual dispatch with `publish_target=testpypi` -> publish to TestPyPI
 - manual dispatch with `publish_target=pypi` -> publish to PyPI
 
+Release notes are prepared continuously by:
+
+- `.github/workflows/release-drafter.yml`
+
+The tagged release workflow also:
+
+- creates or updates the GitHub release entry
+- uploads built artifacts to that GitHub release
+- emits GitHub artifact attestations for `dist/*`
+
 ## What the Release Workflow Verifies
 
 Before publishing, the workflow:
@@ -53,9 +63,10 @@ Recommended sequence:
 
 1. Ensure `main` is green.
 2. Optionally run a manual TestPyPI publish.
-3. Bump version in `pyproject.toml` and any release notes you maintain.
-4. Create and push a tag like `v0.2.0`.
-5. Confirm the PyPI release and install path:
+3. Review the current GitHub draft release notes.
+4. Bump version in `pyproject.toml`.
+5. Create and push a tag like `v0.2.0`.
+6. Confirm the GitHub release, artifact attestations, and PyPI install path:
 
 ```bash
 python -m pip install SCOPE-RTM

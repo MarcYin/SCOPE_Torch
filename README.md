@@ -162,6 +162,8 @@ For most users, the preferred entry points are:
 
 - [`ScopeGridRunner.run_scope_dataset(...)`](src/scope/runners/grid.py)
   High-level reflectance/fluorescence/thermal workflow dispatch from prepared `xarray` inputs.
+- [`ScopeInferenceModel`](src/scope/inference.py)
+  Lightweight tensor-only inference surface for production workloads that only need selected outputs.
 - [`prepare_scope_input_dataset(...)`](src/scope/io/prepare.py)
   Build a runner-ready dataset from weather, observation, and Sentinel-2 bio inputs.
 - [`validate_scope_dataset(...)`](src/scope/io/schema.py)
@@ -202,11 +204,13 @@ mkdocs build --strict
 - Asset-backed constructors such as `from_scope_assets(...)` require an upstream SCOPE checkout. The recommended path is `scope-fetch-upstream`.
 - The installed CLI now covers the common shell workflow: `scope fetch-upstream`, `scope prepare`, and `scope run`.
 - Prepared inputs and assembled outputs now carry glossary-derived `xarray` metadata such as `long_name`, `units`, `description`, `scope_category`, and `scope_relationship`.
+- NetCDF exports are now CF-enriched with dataset-level `Conventions`, `title`, `source`, `references`, `history`, and axis metadata on common coordinates.
 - `scope run` validates workflow-specific inputs before execution, and the same validator is available directly as `validate_scope_dataset(...)`.
 - The default CI suite runs parity tests in live-or-pregenerated mode. On machines without MATLAB, the tests compare against checked-in MATLAB fixtures.
 - The self-hosted GPU and live-MATLAB lanes remain optional operational lanes; see [docs/benchmark-policy.md](docs/benchmark-policy.md).
 - Documentation can be built locally with `mkdocs build --strict` and is deployed by the dedicated GitHub Pages workflow.
 - Distribution artifacts can be built locally with `python -m build` and validated with `python -m twine check dist/*`.
+- Release notes are drafted automatically on `main`, and tagged releases publish PyPI artifacts plus GitHub artifact attestations.
 
 ## Testing
 

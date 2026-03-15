@@ -1,0 +1,93 @@
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+template: |
+  ## What Changed
+
+  $CHANGES
+
+  ## Installation
+
+  ```bash
+  python -m pip install SCOPE-RTM==$RESOLVED_VERSION
+  ```
+
+  ## Verification
+
+  ```bash
+  python -c "import scope; print(scope.__version__)"
+  ```
+
+categories:
+  - title: "Physics and Model Kernels"
+    labels:
+      - physics
+      - model
+      - rtm
+  - title: "Workflow and IO"
+    labels:
+      - io
+      - workflow
+      - cli
+      - export
+  - title: "Documentation"
+    labels:
+      - docs
+  - title: "Testing and CI"
+    labels:
+      - ci
+      - tests
+      - benchmarks
+  - title: "Maintenance"
+    labels:
+      - chore
+      - dependencies
+
+change-template: "- $TITLE (#$NUMBER)"
+change-title-escapes: '\<*_&'
+no-changes-template: "- No user-visible changes were recorded for this release."
+version-resolver:
+  major:
+    labels:
+      - major
+  minor:
+    labels:
+      - feature
+      - enhancement
+  patch:
+    labels:
+      - fix
+      - bugfix
+      - docs
+      - ci
+      - tests
+      - chore
+  default: patch
+exclude-labels:
+  - skip-changelog
+autolabeler:
+  - label: docs
+    files:
+      - "*.md"
+      - "docs/**"
+      - "mkdocs.yml"
+  - label: ci
+    files:
+      - ".github/**"
+  - label: workflow
+    files:
+      - "src/scope/cli/**"
+      - "src/scope/runners/**"
+      - "src/scope/data/**"
+      - "src/scope/io/**"
+  - label: export
+    files:
+      - "src/scope/io/export.py"
+  - label: model
+    files:
+      - "src/scope/spectral/**"
+      - "src/scope/canopy/**"
+      - "src/scope/energy/**"
+      - "src/scope/biochem/**"
+  - label: tests
+    files:
+      - "tests/**"

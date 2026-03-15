@@ -80,7 +80,40 @@ python prepare_scope_input.py --help
 
 This is the intended entry point for building runner-ready `xarray` datasets from weather, observation, and Sentinel-2 bio inputs.
 
-## 4. What to Copy Into Real Applications
+## 4. Lightweight Inference API
+
+For repeated tensor-only inference without the `xarray` runner surface:
+
+```python
+import torch
+from scope import ScopeInferenceModel
+from scope.canopy.foursail import campbell_lidf
+
+lidf = campbell_lidf(57.0, dtype=torch.float32)
+model = ScopeInferenceModel.from_scope_assets(
+    lidf=lidf,
+    scope_root_path="./upstream/SCOPE",
+    dtype=torch.float32,
+)
+
+outputs = model.reflectance(
+    leafbio=...,
+    lai=...,
+    tts=...,
+    tto=...,
+    psi=...,
+    soil_refl=...,
+    outputs=("rsot", "rso"),
+)
+```
+
+This surface is intended for production services that want:
+
+- pure tensor inputs
+- no `xarray` orchestration overhead
+- only the requested outputs
+
+## 5. What to Copy Into Real Applications
 
 For application code, the most stable pattern is:
 
@@ -92,7 +125,7 @@ For application code, the most stable pattern is:
 
 Use the example scripts as working templates rather than writing directly against low-level kernels unless you need custom research behavior.
 
-## 5. Shell Workflow
+## 6. Shell Workflow
 
 For an installed shell workflow rather than Python example code:
 

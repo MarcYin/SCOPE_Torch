@@ -40,6 +40,14 @@ The documentation surface is also treated as a build artifact:
 - the docs site can be built locally with `mkdocs build --strict`
 - CI should keep docs build failures separate from physics regressions
 
+## Inference API
+
+For production code that does not need `xarray`, use:
+
+- `ScopeInferenceModel`
+
+This surface returns only the requested outputs and avoids the dataset assembly overhead of the runner path. It is the recommended deployment API for repeated same-shape inference workloads inside services or larger pipelines.
+
 ## Performance and Compilation
 
 For kernel-level timing and eager-versus-compiled comparisons, use:
@@ -81,6 +89,13 @@ scope-fetch-upstream --help
 scope-prepare --help
 scope-run --help
 ```
+
+Release notes and provenance are also automated:
+
+- `.github/workflows/release-drafter.yml`
+  Maintains draft GitHub release notes from merged pull requests.
+- `.github/workflows/release.yml`
+  Creates the tagged GitHub release, uploads distribution artifacts, and emits GitHub artifact attestations for built packages.
 
 ## Current Operational Tradeoffs
 

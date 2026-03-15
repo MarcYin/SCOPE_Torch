@@ -90,9 +90,55 @@ jobs:
           scope-run --help
           scope vars Cab
 
+  github-release:
+    name: Create GitHub release
+    needs: [build-dist, smoke-install]
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-dist
+          path: dist
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" dist/* --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" dist/* \
+              --title "${GITHUB_REF_NAME}" \
+              --generate-notes \
+              --verify-tag
+          fi
+
+  attest-build-provenance:
+    name: Attest distribution provenance
+    needs: [build-dist, smoke-install]
+    runs-on: ubuntu-latest
+    permissions:
+      attestations: write
+      id-token: write
+    steps:
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-dist
+          path: dist
+
+      - name: Generate build provenance attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist/*"
+
   publish-testpypi:
     name: Publish to TestPyPI
-    needs: [build-dist, smoke-install]
+    needs: [build-dist, smoke-install, attest-build-provenance]
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_target == 'testpypi' }}
     runs-on: ubuntu-latest
     permissions:
@@ -113,7 +159,7 @@ jobs:
 
   publish-pypi:
     name: Publish to PyPI
-    needs: [build-dist, smoke-install]
+    needs: [build-dist, smoke-install, attest-build-provenance]
     if: ${{ (github.event_name == 'workflow_dispatch' && inputs.publish_target == 'pypi') || startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     permissions:
