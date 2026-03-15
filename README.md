@@ -223,6 +223,28 @@ The strongest automated checks currently include:
 - committed scene and time-series benchmark summary regression tests
 - live-or-pregenerated MATLAB parity tests for the single-scene and time-series benchmark gates
 
+## Performance Benchmarking
+
+Use the committed kernel benchmark harness to compare eager and compiled execution on your own hardware:
+
+```bash
+PYTHONPATH=src python scripts/benchmark_kernels.py \
+  --device cpu \
+  --dtype float64 \
+  --batch 32 \
+  --fixture scope-assets \
+  --mode compare
+```
+
+Current reference behavior on CPU with `torch 2.10.0`:
+
+- `fluspect` and `reflectance` show strong steady-state speedups under `torch.compile`, but still require repeated same-shape calls to amortize compile cost.
+- `thermal` speeds up in steady state, but the compile break-even is much higher.
+- layered `fluorescence` currently fails under `torch.compile` on this environment.
+- `leaf_biochemistry` currently becomes slower under `torch.compile` because of scalar-control-flow graph breaks and recompilation churn.
+
+Because of that mix, the package does not enable compiled execution by default.
+
 ## Release Workflows
 
 - `.github/workflows/release.yml`

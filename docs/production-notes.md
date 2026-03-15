@@ -40,6 +40,22 @@ The documentation surface is also treated as a build artifact:
 - the docs site can be built locally with `mkdocs build --strict`
 - CI should keep docs build failures separate from physics regressions
 
+## Performance and Compilation
+
+For kernel-level timing and eager-versus-compiled comparisons, use:
+
+```bash
+PYTHONPATH=src python scripts/benchmark_kernels.py --fixture scope-assets --mode compare
+```
+
+The current recommendation is:
+
+- do not enable `torch.compile` by default in production workflows
+- benchmark on the actual target hardware first
+- only consider a compiled path for long-lived services with repeated same-shape calls
+
+On the current reference CPU environment, `fluspect` and canopy `reflectance` benefit in steady state, `thermal` only pays off after a much larger number of calls, layered `fluorescence` currently fails under `torch.compile`, and leaf biochemistry currently regresses because scalar root-solving logic still causes graph breaks and recompilation churn.
+
 ## Release and Distribution
 
 For maintainers, the repository now has separate operational paths for packaging and docs deployment:
