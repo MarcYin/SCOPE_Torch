@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -18,7 +18,23 @@ from ..variables import annotate_dataset
 
 BIO_BANDS = ("N", "cab", "cm", "cw", "lai", "ala", "cbrown")
 BIO_SCALES = (1 / 100.0, 1 / 100.0, 1 / 10000.0, 1 / 10000.0, 1 / 100.0, 1 / 100.0, 1 / 1000.0)
-SCALE_BANDS = ("N", "cab", "cm", "cw", "lai", "ala", "cbrown", "n0", "m0", "n1", "m1", "BSMBrightness", "BSMlat", "BSMlon", "SMC")
+SCALE_BANDS = (
+    "N",
+    "cab",
+    "cm",
+    "cw",
+    "lai",
+    "ala",
+    "cbrown",
+    "n0",
+    "m0",
+    "n1",
+    "m1",
+    "BSMBrightness",
+    "BSMlat",
+    "BSMlon",
+    "SMC",
+)
 DEFAULT_WEATHER_VAR_MAP = {
     "Rin": "Rin",
     "Rli": "Rli",
@@ -62,9 +78,18 @@ class ScopeInputFiles:
 
     def resolve(self, scope_root_path: str | Path | None = None) -> dict[str, str]:
         return {
-            "optipar_file": _resolve_scope_file(self.optipar_file, scope_root_path=scope_root_path, subdir="fluspect_parameters", filename_key="optipar_file"),
-            "soil_file": _resolve_scope_file(self.soil_file, scope_root_path=scope_root_path, subdir="soil_spectra", filename_key="soil_file"),
-            "atmos_file": _resolve_scope_file(self.atmos_file, scope_root_path=scope_root_path, subdir="radiationdata", filename_key="atmos_file"),
+            "optipar_file": _resolve_scope_file(
+                self.optipar_file,
+                scope_root_path=scope_root_path,
+                subdir="fluspect_parameters",
+                filename_key="optipar_file",
+            ),
+            "soil_file": _resolve_scope_file(
+                self.soil_file, scope_root_path=scope_root_path, subdir="soil_spectra", filename_key="soil_file"
+            ),
+            "atmos_file": _resolve_scope_file(
+                self.atmos_file, scope_root_path=scope_root_path, subdir="radiationdata", filename_key="atmos_file"
+            ),
         }
 
 
@@ -266,7 +291,11 @@ def _resolve_scope_file(
     if not str(candidate) or str(candidate) == ".":
         raise FileNotFoundError(f"No default value for '{filename_key}' found under {root / 'input'}")
 
-    search_paths = [candidate] if candidate.is_absolute() else [root / "input" / subdir / candidate, root / "input" / candidate, root / candidate]
+    search_paths = (
+        [candidate]
+        if candidate.is_absolute()
+        else [root / "input" / subdir / candidate, root / "input" / candidate, root / candidate]
+    )
     for resolved in search_paths:
         if resolved.exists():
             return resolved.as_posix()
@@ -396,7 +425,9 @@ def _drop_nonstandard_coords(dataset: xr.Dataset) -> xr.Dataset:
     return dataset
 
 
-def _interp_time(data: xr.Dataset | xr.DataArray, target_time: Sequence[object], *, method: str) -> xr.Dataset | xr.DataArray:
+def _interp_time(
+    data: xr.Dataset | xr.DataArray, target_time: Sequence[object], *, method: str
+) -> xr.Dataset | xr.DataArray:
     canonical_target = np.asarray(target_time)
     source_time = np.asarray(data.coords["time"].values)
     target_index = canonical_target.astype(source_time.dtype, copy=False)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import fields, is_dataclass
-from functools import lru_cache
+from functools import cache
 
 import pytest
 import torch
@@ -47,7 +47,7 @@ def _assert_tensor_mapping_close(
         assert torch.allclose(lhs.to(torch.float64), rhs.to(torch.float64), atol=atol, rtol=rtol), key
 
 
-@lru_cache(maxsize=None)
+@cache
 def _build_models(device_type: str, dtype: torch.dtype):
     device = torch.device(device_type)
     lidf = campbell_lidf(57.0, device=device, dtype=dtype)
@@ -103,7 +103,9 @@ def _run_fluspect_case(device_type: str, dtype: torch.dtype, index: int | None =
     }
 
 
-def _run_reflectance_profile_case(device_type: str, dtype: torch.dtype, index: int | None = None) -> dict[str, torch.Tensor]:
+def _run_reflectance_profile_case(
+    device_type: str, dtype: torch.dtype, index: int | None = None
+) -> dict[str, torch.Tensor]:
     models = _build_models(device_type, dtype)
     reflectance = models["reflectance"]
     device = reflectance.fluspect.device
@@ -140,7 +142,9 @@ def _run_reflectance_profile_case(device_type: str, dtype: torch.dtype, index: i
     }
 
 
-def _run_fluorescence_profile_case(device_type: str, dtype: torch.dtype, index: int | None = None) -> dict[str, torch.Tensor]:
+def _run_fluorescence_profile_case(
+    device_type: str, dtype: torch.dtype, index: int | None = None
+) -> dict[str, torch.Tensor]:
     models = _build_models(device_type, dtype)
     fluorescence = models["fluorescence"]
     reflectance = fluorescence.reflectance_model
@@ -150,8 +154,12 @@ def _run_fluorescence_profile_case(device_type: str, dtype: torch.dtype, index: 
     n_wle = fluorescence._rtmf_fluspect.spectral.wlE.numel()
     Esun = torch.linspace(1.0, 1.8, 2 * n_wle, device=device, dtype=reflectance.fluspect.dtype).reshape(2, n_wle)
     Esky = torch.linspace(0.2, 0.5, 2 * n_wle, device=device, dtype=reflectance.fluspect.dtype).reshape(2, n_wle)
-    etau = torch.tensor([[0.010, 0.011, 0.012, 0.013], [0.014, 0.015, 0.016, 0.017]], device=device, dtype=reflectance.fluspect.dtype)
-    etah = torch.tensor([[0.008, 0.009, 0.010, 0.011], [0.012, 0.013, 0.014, 0.015]], device=device, dtype=reflectance.fluspect.dtype)
+    etau = torch.tensor(
+        [[0.010, 0.011, 0.012, 0.013], [0.014, 0.015, 0.016, 0.017]], device=device, dtype=reflectance.fluspect.dtype
+    )
+    etah = torch.tensor(
+        [[0.008, 0.009, 0.010, 0.011], [0.012, 0.013, 0.014, 0.015]], device=device, dtype=reflectance.fluspect.dtype
+    )
     leafbio = _leafbio(device, reflectance.fluspect.dtype)
     if index is not None:
         leafbio = _index_value(leafbio, index)
@@ -184,13 +192,23 @@ def _run_fluorescence_profile_case(device_type: str, dtype: torch.dtype, index: 
     }
 
 
-def _run_thermal_profile_case(device_type: str, dtype: torch.dtype, index: int | None = None) -> dict[str, torch.Tensor]:
+def _run_thermal_profile_case(
+    device_type: str, dtype: torch.dtype, index: int | None = None
+) -> dict[str, torch.Tensor]:
     models = _build_models(device_type, dtype)
     thermal = models["thermal"]
     device = thermal.reflectance_model.fluspect.device
     geom = _canopy_geometry(device, thermal.reflectance_model.fluspect.dtype)
-    Tcu = torch.tensor([[25.0, 25.4, 25.8, 26.2], [24.0, 24.4, 24.8, 25.2]], device=device, dtype=thermal.reflectance_model.fluspect.dtype)
-    Tch = torch.tensor([[23.2, 23.5, 23.8, 24.1], [22.5, 22.8, 23.1, 23.4]], device=device, dtype=thermal.reflectance_model.fluspect.dtype)
+    Tcu = torch.tensor(
+        [[25.0, 25.4, 25.8, 26.2], [24.0, 24.4, 24.8, 25.2]],
+        device=device,
+        dtype=thermal.reflectance_model.fluspect.dtype,
+    )
+    Tch = torch.tensor(
+        [[23.2, 23.5, 23.8, 24.1], [22.5, 22.8, 23.1, 23.4]],
+        device=device,
+        dtype=thermal.reflectance_model.fluspect.dtype,
+    )
     Tsu = torch.tensor([26.5, 27.0], device=device, dtype=thermal.reflectance_model.fluspect.dtype)
     Tsh = torch.tensor([22.0, 22.5], device=device, dtype=thermal.reflectance_model.fluspect.dtype)
     if index is not None:
@@ -220,7 +238,9 @@ def _run_thermal_profile_case(device_type: str, dtype: torch.dtype, index: int |
     }
 
 
-def _run_leaf_biochemistry_case(device_type: str, dtype: torch.dtype, index: int | None = None) -> dict[str, torch.Tensor]:
+def _run_leaf_biochemistry_case(
+    device_type: str, dtype: torch.dtype, index: int | None = None
+) -> dict[str, torch.Tensor]:
     models = _build_models(device_type, dtype)
     model = models["leaf_biochemistry"]
     fV = torch.tensor([1.0, 0.95], device=model.device, dtype=model.dtype)
@@ -243,11 +263,7 @@ def _run_leaf_biochemistry_case(device_type: str, dtype: torch.dtype, index: int
         meteo = _index_value(meteo, index)
         fV = _index_value(fV, index)
     result = model(leafbio, meteo, fV=fV)
-    return {
-        name: getattr(result, name)
-        for name in result.__dataclass_fields__
-        if name != "fcount"
-    }
+    return {name: getattr(result, name) for name in result.__dataclass_fields__ if name != "fcount"}
 
 
 KERNEL_CASES = {

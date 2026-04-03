@@ -5,9 +5,9 @@ import torch
 
 from scope.biochem import LeafBiochemistryInputs
 from scope.canopy.fluorescence import CanopyFluorescenceResult
-from scope.canopy.thermal import CanopyThermalRadianceResult
 from scope.canopy.foursail import FourSAILModel, campbell_lidf
 from scope.canopy.reflectance import CanopyReflectanceModel
+from scope.canopy.thermal import CanopyThermalRadianceResult
 from scope.energy import (
     CanopyEnergyBalanceModel,
     EnergyBalanceCanopy,
@@ -182,7 +182,9 @@ def _assert_stable_energy_thermal_close(actual, expected, *, atol: float = 1e-8,
 
 
 def test_energy_balance_converges_and_closes_fluxes():
-    model, leafbio, biochemistry, soil_refl, lai, tts, tto, psi, Esun_sw, Esky_sw, meteo, canopy, soil, options = _setup_energy_case()
+    model, leafbio, biochemistry, soil_refl, lai, tts, tto, psi, Esun_sw, Esky_sw, meteo, canopy, soil, options = (
+        _setup_energy_case()
+    )
 
     result = model.solve(
         leafbio,
@@ -276,7 +278,9 @@ def test_energy_balance_zero_longwave_forcing_is_a_no_op():
 
 
 def test_energy_balance_fluorescence_matches_manual_eta_transport():
-    model, leafbio, biochemistry, soil_refl, lai, tts, tto, psi, Esun_sw, Esky_sw, meteo, canopy, soil, options = _setup_energy_case()
+    model, leafbio, biochemistry, soil_refl, lai, tts, tto, psi, Esun_sw, Esky_sw, meteo, canopy, soil, options = (
+        _setup_energy_case()
+    )
 
     result = model.solve_fluorescence(
         leafbio,
@@ -320,7 +324,9 @@ def test_energy_balance_fluorescence_matches_manual_eta_transport():
 
 
 def test_energy_balance_thermal_matches_manual_solved_temperature_path():
-    model, leafbio, biochemistry, soil_refl, lai, tts, tto, psi, Esun_sw, Esky_sw, meteo, canopy, soil, options = _setup_energy_case()
+    model, leafbio, biochemistry, soil_refl, lai, tts, tto, psi, Esun_sw, Esky_sw, meteo, canopy, soil, options = (
+        _setup_energy_case()
+    )
 
     result = model.solve_thermal(
         leafbio,
@@ -357,7 +363,9 @@ def test_energy_balance_thermal_matches_manual_solved_temperature_path():
 
 
 def test_energy_balance_soil_history_accepts_batched_dt_seconds():
-    model, leafbio, biochemistry, soil_refl, lai, tts, tto, psi, Esun_sw, Esky_sw, meteo, canopy, soil, options = _setup_energy_case()
+    model, leafbio, biochemistry, soil_refl, lai, tts, tto, psi, Esun_sw, Esky_sw, meteo, canopy, soil, options = (
+        _setup_energy_case()
+    )
     device = leafbio.Cab.device
     dtype = leafbio.Cab.dtype
 
@@ -391,7 +399,9 @@ def test_energy_balance_soil_history_accepts_batched_dt_seconds():
 
 
 def test_energy_balance_thermal_batch_matches_single_scene_solves():
-    model, leafbio, biochemistry, soil_refl, lai, tts, tto, psi, Esun_sw, Esky_sw, meteo, canopy, soil, options = _setup_energy_case(batch=2)
+    model, leafbio, biochemistry, soil_refl, lai, tts, tto, psi, Esun_sw, Esky_sw, meteo, canopy, soil, options = (
+        _setup_energy_case(batch=2)
+    )
 
     batched = model.solve_thermal(
         leafbio,

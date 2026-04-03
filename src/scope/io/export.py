@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from importlib.metadata import version as package_version
 from importlib.util import find_spec
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import xarray as xr
@@ -34,11 +35,7 @@ class NetCDFWriteOptions:
 def available_netcdf_engines() -> tuple[str, ...]:
     """Return the NetCDF backends available in the current environment."""
 
-    return tuple(
-        engine
-        for engine in _ENGINE_PREFERENCE
-        if find_spec(_ENGINE_MODULES[engine]) is not None
-    )
+    return tuple(engine for engine in _ENGINE_PREFERENCE if find_spec(_ENGINE_MODULES[engine]) is not None)
 
 
 def resolve_netcdf_engine(preferred: str | None = None) -> str:
@@ -48,13 +45,9 @@ def resolve_netcdf_engine(preferred: str | None = None) -> str:
     if preferred is not None:
         engine = preferred.lower()
         if engine not in _ENGINE_MODULES:
-            raise ValueError(
-                f"Unsupported NetCDF engine '{preferred}'. Expected one of {sorted(_ENGINE_MODULES)}."
-            )
+            raise ValueError(f"Unsupported NetCDF engine '{preferred}'. Expected one of {sorted(_ENGINE_MODULES)}.")
         if engine not in available:
-            raise RuntimeError(
-                f"NetCDF engine '{preferred}' is not available. Installed engines: {list(available)}."
-            )
+            raise RuntimeError(f"NetCDF engine '{preferred}' is not available. Installed engines: {list(available)}.")
         return engine
 
     if not available:
@@ -152,8 +145,7 @@ def _cf_global_attrs(dataset: xr.Dataset) -> dict[str, Any]:
         "https://scope-model.readthedocs.io/en/master/; https://github.com/Christiaanvandertol/SCOPE",
     )
     history_entry = (
-        f"{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}: "
-        "wrote NetCDF with scope.write_netcdf_dataset"
+        f"{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}: wrote NetCDF with scope.write_netcdf_dataset"
     )
     existing_history = _sanitize_history_attr(attrs.get("history"))
     if existing_history not in {None, ""}:

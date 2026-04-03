@@ -2,7 +2,6 @@ import math
 
 import numpy as np
 import torch
-
 from prosail.FourSAIL import foursail as foursail_np
 
 from scope.canopy.foursail import FourSAILModel, campbell_lidf
@@ -111,6 +110,11 @@ def test_hotspot_terms_match_scalar_reference():
 
     tsstoo, sumint = model._hotspot_terms(hotspot, dso, ks, ko, lai)
 
-    expected = np.array([_hotspot_terms_scalar(*vals) for vals in zip(hotspot.tolist(), dso.tolist(), ks.tolist(), ko.tolist(), lai.tolist())])
+    expected = np.array(
+        [
+            _hotspot_terms_scalar(*vals)
+            for vals in zip(hotspot.tolist(), dso.tolist(), ks.tolist(), ko.tolist(), lai.tolist())
+        ]
+    )
     assert np.allclose(tsstoo.numpy(), expected[:, 0], atol=1e-12, rtol=1e-10)
     assert np.allclose(sumint.numpy(), expected[:, 1], atol=1e-12, rtol=1e-10)

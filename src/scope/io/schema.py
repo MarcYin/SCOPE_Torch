@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from typing import Mapping
+from collections.abc import Mapping
 
 import xarray as xr
 
 from ..variables import get_variable_definition
-
 
 _BASE_REFLECTANCE_REQUIRED = ("Cab", "Cw", "Cdm", "LAI", "tts", "tto", "psi")
 _SOIL_GROUPS = (("soil_refl",), ("soil_spectrum",), ("BSMBrightness", "BSMlat", "BSMlon", "SMC"))
@@ -47,7 +46,10 @@ def validate_scope_dataset(
     directional = workflow in {"directional-reflectance", "directional-fluorescence", "directional-thermal"}
 
     if workflow == "scope":
-        options = {key: dataset.attrs.get(key) for key in ("calc_fluor", "calc_planck", "calc_directional", "calc_vert_profiles")}
+        options = {
+            key: dataset.attrs.get(key)
+            for key in ("calc_fluor", "calc_planck", "calc_directional", "calc_vert_profiles")
+        }
         if scope_options:
             options.update(scope_options)
         if _as_bool(options.get("calc_fluor"), default=False):

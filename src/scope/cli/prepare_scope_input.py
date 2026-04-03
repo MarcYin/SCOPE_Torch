@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 import xarray as xr
 
@@ -66,38 +66,43 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 
 def run(args: argparse.Namespace) -> None:
-    weather_ds = xr.open_dataset(args.weather)
-    observation_ds = xr.open_dataset(args.observation)
-    reference_ds = xr.open_dataset(args.s2_reference) if args.s2_reference else None
-    post_bio_da, post_bio_scale_da = read_s2_bio_inputs(args.bio_npz, year=args.year, reference_dataset=reference_ds)
+    with xr.open_dataset(args.weather) as weather_ds, xr.open_dataset(args.observation) as observation_ds:
+        reference_ds = xr.open_dataset(args.s2_reference) if args.s2_reference else None
+        try:
+            post_bio_da, post_bio_scale_da = read_s2_bio_inputs(
+                args.bio_npz, year=args.year, reference_dataset=reference_ds
+            )
 
-    time_slice = None
-    if args.time_start or args.time_end:
-        time_slice = slice(args.time_start, args.time_end)
+            time_slice = None
+            if args.time_start or args.time_end:
+                time_slice = slice(args.time_start, args.time_end)
 
-    dataset = prepare_scope_input_dataset(
-        weather_ds,
-        observation_ds,
-        post_bio_da,
-        post_bio_scale_da,
-        scope_root_path=args.scope_root,
-        scope_files=ScopeInputFiles(
-            optipar_file=args.optipar_file,
-            soil_file=args.soil_file,
-            atmos_file=args.atmos_file,
-        ),
-        bounds=args.bounds,
-        time_slice=time_slice,
-    )
-    write_netcdf_dataset(
-        dataset,
-        Path(args.output),
-        options=NetCDFWriteOptions(
-            engine=args.netcdf_engine,
-            compression=not args.no_compression,
-            compression_level=args.compression_level,
-        ),
-    )
+            dataset = prepare_scope_input_dataset(
+                weather_ds,
+                observation_ds,
+                post_bio_da,
+                post_bio_scale_da,
+                scope_root_path=args.scope_root,
+                scope_files=ScopeInputFiles(
+                    optipar_file=args.optipar_file,
+                    soil_file=args.soil_file,
+                    atmos_file=args.atmos_file,
+                ),
+                bounds=args.bounds,
+                time_slice=time_slice,
+            )
+            write_netcdf_dataset(
+                dataset,
+                Path(args.output),
+                options=NetCDFWriteOptions(
+                    engine=args.netcdf_engine,
+                    compression=not args.no_compression,
+                    compression_level=args.compression_level,
+                ),
+            )
+        finally:
+            if reference_ds is not None:
+                reference_ds.close()
 
 
 def main(argv: Sequence[str] | None = None) -> None:

@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCENE_SUMMARY_PATH = REPO_ROOT / "tests" / "data" / "scope_benchmark_suite_summary.json"
 TIMESERIES_SUMMARY_PATH = REPO_ROOT / "tests" / "data" / "scope_timeseries_benchmark_summary.json"

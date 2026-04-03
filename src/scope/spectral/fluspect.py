@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
-from typing import Optional, Tuple
 
 import torch
 
@@ -13,11 +12,11 @@ _EULER_GAMMA = 0.5772156649015328606
 @dataclass(slots=True)
 class SpectralGrids:
     wlP: torch.Tensor
-    wlF: Optional[torch.Tensor] = None
-    wlE: Optional[torch.Tensor] = None
+    wlF: torch.Tensor | None = None
+    wlE: torch.Tensor | None = None
 
     @staticmethod
-    def default(device: torch.device, dtype: torch.dtype) -> "SpectralGrids":
+    def default(device: torch.device, dtype: torch.dtype) -> SpectralGrids:
         wlP = torch.arange(400.0, 2501.0, 1.0, device=device, dtype=dtype)
         wlF = torch.arange(640.0, 851.0, 4.0, device=device, dtype=dtype)
         wlE = torch.arange(400.0, 751.0, 5.0, device=device, dtype=dtype)
@@ -36,10 +35,10 @@ class OptiPar:
     Ks: torch.Tensor
     Kant: torch.Tensor
     phi: torch.Tensor
-    Kp: Optional[torch.Tensor] = None
-    Kcbc: Optional[torch.Tensor] = None
+    Kp: torch.Tensor | None = None
+    Kcbc: torch.Tensor | None = None
 
-    def to(self, device: torch.device, dtype: torch.dtype) -> "OptiPar":
+    def to(self, device: torch.device, dtype: torch.dtype) -> OptiPar:
         data = {}
         for f in fields(self):
             value = getattr(self, f.name)
@@ -53,7 +52,7 @@ class OptiPar:
 @dataclass(slots=True)
 class LeafBioBatch:
     Cab: torch.Tensor | float
-    Cca: Optional[torch.Tensor | float] = None
+    Cca: torch.Tensor | float | None = None
     V2Z: torch.Tensor | float = 0.0
     Cw: torch.Tensor | float = 0.009
     Cdm: torch.Tensor | float = 0.012
@@ -71,8 +70,8 @@ class LeafOptics:
     tran: torch.Tensor
     kChlrel: torch.Tensor
     kCarrel: torch.Tensor
-    Mb: Optional[torch.Tensor] = None
-    Mf: Optional[torch.Tensor] = None
+    Mb: torch.Tensor | None = None
+    Mf: torch.Tensor | None = None
 
 
 class FluspectModel:
@@ -82,7 +81,7 @@ class FluspectModel:
         optipar: OptiPar,
         ndub: int = 15,
         doublings_step: int = 5,
-        device: Optional[torch.device] = None,
+        device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
     ) -> None:
         self.device = device or spectral.wlP.device
@@ -98,13 +97,13 @@ class FluspectModel:
         path: str | None = None,
         *,
         scope_root_path: str | None = None,
-        device: Optional[torch.device | str] = None,
+        device: torch.device | str | None = None,
         dtype: torch.dtype = torch.float32,
         ndub: int = 15,
         doublings_step: int = 5,
-        wlF: Optional[torch.Tensor] = None,
-        wlE: Optional[torch.Tensor] = None,
-    ) -> "FluspectModel":
+        wlF: torch.Tensor | None = None,
+        wlE: torch.Tensor | None = None,
+    ) -> FluspectModel:
         from .loaders import load_fluspect_resources
 
         resources = load_fluspect_resources(
@@ -236,7 +235,7 @@ class FluspectModel:
         gather1 = source_y.gather(1, (idx + 1).unsqueeze(0).expand(batch, -1))
         return gather0 + (gather1 - gather0) * frac
 
-    def _prepare_leafbio(self, leafbio: LeafBioBatch) -> Tuple[int, dict[str, torch.Tensor]]:
+    def _prepare_leafbio(self, leafbio: LeafBioBatch) -> tuple[int, dict[str, torch.Tensor]]:
         tensors: dict[str, torch.Tensor] = {}
         batch_size = None
         for f in fields(LeafBioBatch):
@@ -260,12 +259,14 @@ class FluspectModel:
             batch_size = 1
         return batch_size, {k: v for k, v in tensors.items()}
 
-    def _optional_tensor(self, tensor: Optional[torch.Tensor], batch: int, size: int) -> Optional[torch.Tensor]:
+    def _optional_tensor(self, tensor: torch.Tensor | None, batch: int, size: int) -> torch.Tensor | None:
         if tensor is None:
             return None
         return tensor.unsqueeze(0).expand(batch, -1).to(self.device, self.dtype)
 
-    def _prospect_layer(self, Kall: torch.Tensor, Cab: torch.Tensor, Kab: torch.Tensor, N: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _prospect_layer(
+        self, Kall: torch.Tensor, Cab: torch.Tensor, Kab: torch.Tensor, N: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         t1 = (1 - Kall) * torch.exp(-Kall)
         exp_term = self._expint(Kall)
         t2 = (Kall**2) * exp_term
@@ -286,6 +287,7 @@ class FluspectModel:
             xs = x_clamped[small]
             series = torch.zeros_like(xs)
             term = torch.ones_like(xs)
+            # 20 terms of the power-series expansion suffice for |x| <= 1.
             for n in range(1, 21):
                 term = term * (-xs / n)
                 series = series - term / n
@@ -295,9 +297,11 @@ class FluspectModel:
         if large.any():
             xl = x_clamped[large]
             b = xl + 1.0
-            c = torch.full_like(xl, 1e30)
+            # Large initial value for Lentz continued-fraction algorithm.
+            c = torch.full_like(xl, 1.0 / torch.finfo(xl.dtype).tiny)
             d = 1.0 / b
             h = d.clone()
+            # 100 iterations of Lentz continued fraction; converges for x > 1.
             for i in range(1, 101):
                 a = -(i * i)
                 b = b + 2.0
@@ -312,7 +316,7 @@ class FluspectModel:
     def _calctav(self, alfa: float, nr: torch.Tensor) -> torch.Tensor:
         return fresnel_tav(alfa, nr)
 
-    def _stacked_layers(self, r: torch.Tensor, t: torch.Tensor, N: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _stacked_layers(self, r: torch.Tensor, t: torch.Tensor, N: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         batch = r.shape[0]
         D = torch.sqrt(torch.clamp((1 + r + t) * (1 + r - t) * (1 - r + t) * (1 - r - t), min=0.0))
         rq = r**2
@@ -338,7 +342,18 @@ class FluspectModel:
         tau: torch.Tensor,
         nr: torch.Tensor,
         N: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+    ]:
         talf = self._calctav(59.0, nr)
         ralf = 1 - talf
         t12 = self._calctav(90.0, nr)
@@ -377,7 +392,7 @@ class FluspectModel:
         kChlrel: torch.Tensor,
         fqe: torch.Tensor,
         phi: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         device = self.device
         dtype = self.dtype
         spectral = self.spectral
@@ -441,8 +456,7 @@ class FluspectModel:
 
         sigmoid = 1.0 / (
             1.0
-            + torch.exp(-wlF.view(-1, 1).to(device, dtype) / 10.0)
-            * torch.exp(wlE.view(1, -1).to(device, dtype) / 10.0)
+            + torch.exp(-wlF.view(-1, 1).to(device, dtype) / 10.0) * torch.exp(wlE.view(1, -1).to(device, dtype) / 10.0)
         )
         sigmoid = sigmoid.unsqueeze(0)
 

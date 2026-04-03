@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from typing import Sequence
+from collections.abc import Sequence
 
 from ..variables import iter_variables, search_variables
 
@@ -17,7 +17,9 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("dimension", "option", "input", "output"),
         help="Restrict results to one variable kind.",
     )
-    parser.add_argument("--category", help="Restrict results to a single category, for example 'reflectance' or 'meteorology'.")
+    parser.add_argument(
+        "--category", help="Restrict results to a single category, for example 'reflectance' or 'meteorology'."
+    )
     parser.add_argument(
         "--workflow",
         choices=("prepare", "reflectance", "fluorescence", "thermal", "energy-balance"),

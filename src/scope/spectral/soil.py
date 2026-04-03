@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, fields
-from typing import Optional
 
 import torch
 
@@ -38,7 +37,7 @@ class SoilBSMModel:
         nw: torch.Tensor,
         *,
         empirical: SoilEmpiricalParams | None = None,
-        device: Optional[torch.device | str] = None,
+        device: torch.device | str | None = None,
         dtype: torch.dtype = torch.float32,
     ) -> None:
         device_obj = torch.device(device) if device is not None else torch.as_tensor(Kw).device
@@ -65,14 +64,16 @@ class SoilBSMModel:
         resources: FluspectResources,
         *,
         empirical: SoilEmpiricalParams | None = None,
-        device: Optional[torch.device | str] = None,
+        device: torch.device | str | None = None,
         dtype: torch.dtype = torch.float32,
-    ) -> "SoilBSMModel":
+    ) -> SoilBSMModel:
         try:
             GSV = resources.extras["GSV"]
             nw = resources.extras["nw"]
         except KeyError as exc:
-            raise ValueError("FLUSPECT resources must include 'GSV' and 'nw' extras to build the BSM soil model") from exc
+            raise ValueError(
+                "FLUSPECT resources must include 'GSV' and 'nw' extras to build the BSM soil model"
+            ) from exc
 
         return cls(
             GSV,
@@ -90,9 +91,9 @@ class SoilBSMModel:
         *,
         scope_root_path: str | None = None,
         empirical: SoilEmpiricalParams | None = None,
-        device: Optional[torch.device | str] = None,
+        device: torch.device | str | None = None,
         dtype: torch.dtype = torch.float32,
-    ) -> "SoilBSMModel":
+    ) -> SoilBSMModel:
         resources = load_fluspect_resources(
             path,
             scope_root_path=scope_root_path,
@@ -101,6 +102,7 @@ class SoilBSMModel:
         )
         return cls.from_resources(resources, empirical=empirical, device=device, dtype=dtype)
 
+    @torch.inference_mode()
     def __call__(self, soil: BSMSoilParameters) -> torch.Tensor:
         _, params = self._prepare_soil(soil)
         smc = self._normalize_soil_moisture(params["SMC"])
@@ -173,7 +175,12 @@ class SoilBSMModel:
         poisson = torch.exp(k.unsqueeze(0) * torch.log(mu_safe) - mu_safe - torch.lgamma(k + 1.0).unsqueeze(0))
         tw = torch.exp((-2.0 * self.Kw.unsqueeze(-1) * self.empirical.film) * k)
 
-        fraction = (1 - Rw).unsqueeze(0).unsqueeze(-1) * (1 - p).unsqueeze(0).unsqueeze(-1) * tw.unsqueeze(0) * rbac.unsqueeze(-1)
+        fraction = (
+            (1 - Rw).unsqueeze(0).unsqueeze(-1)
+            * (1 - p).unsqueeze(0).unsqueeze(-1)
+            * tw.unsqueeze(0)
+            * rbac.unsqueeze(-1)
+        )
         fraction = fraction / (1 - p.unsqueeze(0).unsqueeze(-1) * tw.unsqueeze(0) * rbac.unsqueeze(-1))
         Rwet_k = Rw.unsqueeze(0).unsqueeze(-1) + fraction
 

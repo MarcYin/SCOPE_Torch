@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
-
 
 DEFAULT_SCOPE_REPO = "https://github.com/Christiaanvandertol/SCOPE.git"
 DEFAULT_SCOPE_COMMIT = "e4c2e5109a309e6d2636fd6aa33e0e54b6dd88de"
@@ -40,7 +39,9 @@ def run(args: argparse.Namespace) -> Path:
     return fetch_upstream_scope(args.dest, repo_url=args.repo_url, commit=args.commit)
 
 
-def fetch_upstream_scope(dest: str | Path, *, repo_url: str = DEFAULT_SCOPE_REPO, commit: str = DEFAULT_SCOPE_COMMIT) -> Path:
+def fetch_upstream_scope(
+    dest: str | Path, *, repo_url: str = DEFAULT_SCOPE_REPO, commit: str = DEFAULT_SCOPE_COMMIT
+) -> Path:
     destination = Path(dest)
     destination.parent.mkdir(parents=True, exist_ok=True)
 

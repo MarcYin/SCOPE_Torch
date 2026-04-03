@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
-from typing import Optional
+from functools import cache
 
 import numpy as np
 import torch
@@ -55,7 +54,7 @@ class LayeredCanopyTransfer:
 class LayeredCanopyTransportModel:
     """Reusable layered transport helper derived from SCOPE's RTMo recursions."""
 
-    def __init__(self, sail: FourSAILModel, *, lazitab: Optional[torch.Tensor] = None) -> None:
+    def __init__(self, sail: FourSAILModel, *, lazitab: torch.Tensor | None = None) -> None:
         self.sail = sail
         self.default_lazitab = lazitab
 
@@ -70,7 +69,7 @@ class LayeredCanopyTransportModel:
         psi: torch.Tensor,
         *,
         hotspot: torch.Tensor,
-        lidf: Optional[torch.Tensor] = None,
+        lidf: torch.Tensor | None = None,
         nlayers: int = 60,
     ) -> LayeredCanopyTransfer:
         rho = self.sail._ensure_2d(rho)
@@ -137,14 +136,22 @@ class LayeredCanopyTransportModel:
         R_dd[:, -1, :] = soil
         for layer in range(nlayers - 1, -1, -1):
             dnorm = (1.0 - rho_dd[:, layer, :] * R_dd[:, layer + 1, :]).clamp(min=1e-9)
-            Xsd[:, layer, :] = (tau_sd[:, layer, :] + tau_ss[:, layer].unsqueeze(-1) * R_sd[:, layer + 1, :] * rho_dd[:, layer, :]) / dnorm
+            Xsd[:, layer, :] = (
+                tau_sd[:, layer, :] + tau_ss[:, layer].unsqueeze(-1) * R_sd[:, layer + 1, :] * rho_dd[:, layer, :]
+            ) / dnorm
             Xdd[:, layer, :] = tau_dd[:, layer, :] / dnorm
             R_sd[:, layer, :] = rho_sd[:, layer, :] + tau_dd[:, layer, :] * (
                 R_sd[:, layer + 1, :] * tau_ss[:, layer].unsqueeze(-1) + R_dd[:, layer + 1, :] * Xsd[:, layer, :]
             )
             R_dd[:, layer, :] = rho_dd[:, layer, :] + tau_dd[:, layer, :] * R_dd[:, layer + 1, :] * Xdd[:, layer, :]
 
-        xl = torch.cat([torch.zeros(1, device=device, dtype=dtype), -torch.arange(1, nlayers + 1, device=device, dtype=dtype) * dx], dim=0)
+        xl = torch.cat(
+            [
+                torch.zeros(1, device=device, dtype=dtype),
+                -torch.arange(1, nlayers + 1, device=device, dtype=dtype) * dx,
+            ],
+            dim=0,
+        )
         Ps = torch.exp(ks.unsqueeze(-1) * xl.unsqueeze(0) * lai.unsqueeze(-1))
         Po = torch.exp(ko.unsqueeze(-1) * xl.unsqueeze(0) * lai.unsqueeze(-1))
         Ps[:, :nlayers] = Ps[:, :nlayers] * self._finite_layer_average(ks, lai, dx).unsqueeze(-1)
@@ -197,7 +204,9 @@ class LayeredCanopyTransportModel:
             lidf_azimuth=lidf_azimuth,
         )
 
-    def flux_profiles(self, transfer: LayeredCanopyTransfer, Esun_: torch.Tensor, Esky_: torch.Tensor) -> LayerFluxProfiles:
+    def flux_profiles(
+        self, transfer: LayeredCanopyTransfer, Esun_: torch.Tensor, Esky_: torch.Tensor
+    ) -> LayerFluxProfiles:
         Esun = self.sail._ensure_2d(Esun_)
         Esky = self.sail._ensure_2d(Esky_, target_shape=Esun.shape)
         batch, nwl = Esun.shape
@@ -210,8 +219,12 @@ class LayeredCanopyTransportModel:
 
         for layer in range(transfer.nlayers):
             Es[:, layer + 1, :] = transfer.Xss[:, layer].unsqueeze(-1) * Es[:, layer, :]
-            Emin[:, layer + 1, :] = transfer.Xsd[:, layer, :] * Es[:, layer, :] + transfer.Xdd[:, layer, :] * Emin[:, layer, :]
-            Eplu[:, layer, :] = transfer.R_sd[:, layer, :] * Es[:, layer, :] + transfer.R_dd[:, layer, :] * Emin[:, layer, :]
+            Emin[:, layer + 1, :] = (
+                transfer.Xsd[:, layer, :] * Es[:, layer, :] + transfer.Xdd[:, layer, :] * Emin[:, layer, :]
+            )
+            Eplu[:, layer, :] = (
+                transfer.R_sd[:, layer, :] * Es[:, layer, :] + transfer.R_dd[:, layer, :] * Emin[:, layer, :]
+            )
         Eplu[:, -1, :] = transfer.R_dd[:, -1, :] * (Es[:, -1, :] + Emin[:, -1, :])
         return LayerFluxProfiles(Es_=Es, Emin_=Emin, Eplu_=Eplu)
 
@@ -275,7 +288,9 @@ class LayeredCanopyTransportModel:
         litab: torch.Tensor,
         lazitab: torch.Tensor,
         lidf: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[
+        torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
+    ]:
         device = tts.device
         dtype = tts.dtype
         batch = tts.shape[0]
@@ -321,12 +336,14 @@ class LayeredCanopyTransportModel:
         return torch.where(torch.abs(scaled) <= 1e-9, limit, exact)
 
     @staticmethod
-    @lru_cache(maxsize=None)
+    @cache
     def _gauss_legendre_numpy(order: int) -> tuple[np.ndarray, np.ndarray]:
         nodes, weights = np.polynomial.legendre.leggauss(order)
         return nodes.astype(np.float64), weights.astype(np.float64)
 
-    def _gauss_legendre(self, *, order: int, device: torch.device, dtype: torch.dtype) -> tuple[torch.Tensor, torch.Tensor]:
+    def _gauss_legendre(
+        self, *, order: int, device: torch.device, dtype: torch.dtype
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         nodes_np, weights_np = self._gauss_legendre_numpy(order)
         nodes = torch.as_tensor(nodes_np, device=device, dtype=dtype)
         weights = torch.as_tensor(weights_np, device=device, dtype=dtype)

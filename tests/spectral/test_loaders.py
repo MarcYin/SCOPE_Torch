@@ -16,7 +16,10 @@ def test_load_scope_filenames_reads_default_assets():
 def test_load_fluspect_resources_reads_default_optipar():
     resources = load_fluspect_resources(dtype=torch.float64)
 
-    assert resources.source == scope_repo_root() / "upstream" / "SCOPE" / "input" / "fluspect_parameters" / "Optipar2021_ProspectPRO_CX.mat"
+    assert (
+        resources.source
+        == scope_repo_root() / "upstream" / "SCOPE" / "input" / "fluspect_parameters" / "Optipar2021_ProspectPRO_CX.mat"
+    )
     assert resources.spectral.wlP.shape == (2001,)
     assert float(resources.spectral.wlP[0]) == 400.0
     assert float(resources.spectral.wlP[-1]) == 2400.0
@@ -29,7 +32,10 @@ def test_load_fluspect_resources_reads_default_optipar():
 def test_load_fluspect_resources_handles_legacy_optipar():
     resources = load_fluspect_resources("Optipar2017_ProspectD.mat")
 
-    assert resources.source == scope_repo_root() / "upstream" / "SCOPE" / "input" / "fluspect_parameters" / "Optipar2017_ProspectD.mat"
+    assert (
+        resources.source
+        == scope_repo_root() / "upstream" / "SCOPE" / "input" / "fluspect_parameters" / "Optipar2017_ProspectD.mat"
+    )
     assert resources.optipar.Kp is None
     assert resources.optipar.Kcbc is None
     assert "phiE" not in resources.extras
@@ -47,7 +53,9 @@ def test_load_soil_spectra_reads_soil_library():
 
 def test_loaders_accept_explicit_repo_relative_paths():
     repo_root = scope_repo_root()
-    resources = load_fluspect_resources(repo_root / "upstream" / "SCOPE" / "input" / "fluspect_parameters" / "Optipar2021_ProspectPRO_CX.mat")
+    resources = load_fluspect_resources(
+        repo_root / "upstream" / "SCOPE" / "input" / "fluspect_parameters" / "Optipar2021_ProspectPRO_CX.mat"
+    )
     soils = load_soil_spectra(Path("upstream/SCOPE/input/soil_spectra/soilnew.txt"))
 
     assert resources.optipar.Kp is not None

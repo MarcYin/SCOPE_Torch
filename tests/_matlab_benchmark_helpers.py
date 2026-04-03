@@ -9,7 +9,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TEST_DATA_DIR = REPO_ROOT / "tests" / "data"
 DEFAULT_MATLAB = "/Applications/MATLAB_R2025b.app/bin/matlab"

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 import torch
 
@@ -10,7 +9,12 @@ from ..canopy.fluorescence import CanopyFluorescenceModel, CanopyFluorescenceRes
 from ..canopy.foursail import FourSAILModel
 from ..canopy.layered_rt import LayeredCanopyTransfer
 from ..canopy.reflectance import CanopyReflectanceModel
-from ..canopy.thermal import CanopyThermalRadianceModel, CanopyThermalRadianceResult, ThermalOptics, default_thermal_wavelengths
+from ..canopy.thermal import (
+    CanopyThermalRadianceModel,
+    CanopyThermalRadianceResult,
+    ThermalOptics,
+    default_thermal_wavelengths,
+)
 from ..spectral.fluspect import LeafBioBatch
 from ..spectral.soil import SoilEmpiricalParams
 from .fluxes import HeatFluxInputs, ResistanceInputs, aerodynamic_resistances, heat_fluxes
@@ -36,7 +40,7 @@ class EnergyBalanceCanopy:
     d: torch.Tensor | float
     h: torch.Tensor | float
     kV: torch.Tensor | float = 0.0
-    fV: Optional[torch.Tensor | float] = None
+    fV: torch.Tensor | float | None = None
 
 
 @dataclass(slots=True)
@@ -46,8 +50,8 @@ class EnergyBalanceSoil:
     thermal_optics: ThermalOptics = field(default_factory=ThermalOptics)
     soil_heat_method: int = 2
     GAM: torch.Tensor | float = 0.0
-    Tsold: Optional[torch.Tensor] = None
-    dt_seconds: Optional[torch.Tensor | float] = None
+    Tsold: torch.Tensor | None = None
+    dt_seconds: torch.Tensor | float | None = None
 
 
 @dataclass(slots=True)
@@ -145,7 +149,7 @@ class CanopyEnergyBalanceResult:
     max_error: torch.Tensor
     converged: torch.Tensor
     counter: torch.Tensor
-    Tsold: Optional[torch.Tensor] = None
+    Tsold: torch.Tensor | None = None
 
 
 @dataclass(slots=True)
@@ -180,18 +184,18 @@ class CanopyEnergyBalanceModel:
         cls,
         *,
         lidf: torch.Tensor,
-        sail: Optional[FourSAILModel] = None,
-        path: Optional[str] = None,
-        soil_path: Optional[str] = None,
-        scope_root_path: Optional[str] = None,
-        device: Optional[torch.device | str] = None,
+        sail: FourSAILModel | None = None,
+        path: str | None = None,
+        soil_path: str | None = None,
+        scope_root_path: str | None = None,
+        device: torch.device | str | None = None,
         dtype: torch.dtype = torch.float32,
         ndub: int = 15,
         doublings_step: int = 5,
         default_hotspot: float = 0.2,
         soil_index_base: int = 1,
         soil_empirical: SoilEmpiricalParams | None = None,
-    ) -> "CanopyEnergyBalanceModel":
+    ) -> CanopyEnergyBalanceModel:
         reflectance = CanopyReflectanceModel.from_scope_assets(
             lidf=lidf,
             sail=sail,
@@ -220,21 +224,21 @@ class CanopyEnergyBalanceModel:
         Esun_sw: torch.Tensor,
         Esky_sw: torch.Tensor,
         *,
-        Esun_lw: Optional[torch.Tensor] = None,
-        Esky_lw: Optional[torch.Tensor] = None,
-        wlT: Optional[torch.Tensor] = None,
+        Esun_lw: torch.Tensor | None = None,
+        Esky_lw: torch.Tensor | None = None,
+        wlT: torch.Tensor | None = None,
         meteo: EnergyBalanceMeteo,
         canopy: EnergyBalanceCanopy,
         soil: EnergyBalanceSoil,
-        options: Optional[EnergyBalanceOptions] = None,
-        biochem_options: Optional[BiochemicalOptions] = None,
-        hotspot: Optional[torch.Tensor] = None,
-        lidf: Optional[torch.Tensor] = None,
-        nlayers: Optional[int] = None,
-        Tcu0: Optional[torch.Tensor] = None,
-        Tch0: Optional[torch.Tensor] = None,
-        Tsu0: Optional[torch.Tensor] = None,
-        Tsh0: Optional[torch.Tensor] = None,
+        options: EnergyBalanceOptions | None = None,
+        biochem_options: BiochemicalOptions | None = None,
+        hotspot: torch.Tensor | None = None,
+        lidf: torch.Tensor | None = None,
+        nlayers: int | None = None,
+        Tcu0: torch.Tensor | None = None,
+        Tch0: torch.Tensor | None = None,
+        Tsu0: torch.Tensor | None = None,
+        Tsh0: torch.Tensor | None = None,
     ) -> CanopyEnergyBalanceResult:
         opts = options or EnergyBalanceOptions()
         device = self.reflectance_model.fluspect.device
@@ -249,7 +253,9 @@ class CanopyEnergyBalanceModel:
         oa = self._expand_batch(meteo.Oa, batch, device=device, dtype=dtype)
         pressure = self._expand_batch(meteo.p, batch, device=device, dtype=dtype)
         L = self._expand_batch(meteo.L, batch, device=device, dtype=dtype)
-        hotspot_value = hotspot if hotspot is not None else torch.full_like(lai_tensor, self.reflectance_model.default_hotspot)
+        hotspot_value = (
+            hotspot if hotspot is not None else torch.full_like(lai_tensor, self.reflectance_model.default_hotspot)
+        )
 
         nl = self._resolve_nlayers(nlayers, canopy.fV, Tcu0, Tch0)
         shortwave = self._shortwave_radiation(
@@ -273,10 +279,18 @@ class CanopyEnergyBalanceModel:
         fV = self._fV_profile(canopy, shortwave.transfer, batch)
         e_to_q = (self.MH2O / self.Mair) / pressure
 
-        Tch = self._initial_layer_state(Tch0, ta + opts.initial_shaded_leaf_offset, batch, nl, device=device, dtype=dtype)
-        Tcu = self._initial_layer_state(Tcu0, ta + opts.initial_sunlit_leaf_offset, batch, nl, device=device, dtype=dtype)
-        Tsh = self._expand_batch(Tsh0 if Tsh0 is not None else ta + opts.initial_soil_offset, batch, device=device, dtype=dtype)
-        Tsu = self._expand_batch(Tsu0 if Tsu0 is not None else ta + opts.initial_soil_offset, batch, device=device, dtype=dtype)
+        Tch = self._initial_layer_state(
+            Tch0, ta + opts.initial_shaded_leaf_offset, batch, nl, device=device, dtype=dtype
+        )
+        Tcu = self._initial_layer_state(
+            Tcu0, ta + opts.initial_sunlit_leaf_offset, batch, nl, device=device, dtype=dtype
+        )
+        Tsh = self._expand_batch(
+            Tsh0 if Tsh0 is not None else ta + opts.initial_soil_offset, batch, device=device, dtype=dtype
+        )
+        Tsu = self._expand_batch(
+            Tsu0 if Tsu0 is not None else ta + opts.initial_soil_offset, batch, device=device, dtype=dtype
+        )
         Cch = ca.view(batch, 1).expand(batch, nl)
         Ccu = ca.view(batch, 1).expand(batch, nl)
         ech = ea.view(batch, 1).expand(batch, nl)
@@ -471,18 +485,30 @@ class CanopyEnergyBalanceModel:
 
             Tch_new = Tch + Wc * EBerch / (
                 (self.rhoa * self.cp) / rac_term
-                + self.rhoa * shaded_flux.lambda_evap * e_to_q.view(batch, 1) * shaded_flux.slope_satvap / (rac_term + shaded.rcw)
+                + self.rhoa
+                * shaded_flux.lambda_evap
+                * e_to_q.view(batch, 1)
+                * shaded_flux.slope_satvap
+                / (rac_term + shaded.rcw)
                 + 4.0 * epsc * self.sigma_sb * (Tch + 273.15) ** 3
             )
             Tcu_new = Tcu + Wc * EBercu / (
                 (self.rhoa * self.cp) / rac_term
-                + self.rhoa * sunlit_flux.lambda_evap * e_to_q.view(batch, 1) * sunlit_flux.slope_satvap / (rac_term + sunlit.rcw)
+                + self.rhoa
+                * sunlit_flux.lambda_evap
+                * e_to_q.view(batch, 1)
+                * sunlit_flux.slope_satvap
+                / (rac_term + sunlit.rcw)
                 + 4.0 * epsc * self.sigma_sb * (Tcu + 273.15) ** 3
             )
             soil_rss = self._prepare_soil_profile(soil.rss, batch, device=device, dtype=dtype)
             Tsoil_new = soil_t + Wc * EBers / (
                 (self.rhoa * self.cp) / ras_term
-                + self.rhoa * soil_flux.lambda_evap * e_to_q.view(batch, 1) * soil_flux.slope_satvap / (ras_term + soil_rss)
+                + self.rhoa
+                * soil_flux.lambda_evap
+                * e_to_q.view(batch, 1)
+                * soil_flux.slope_satvap
+                / (ras_term + soil_rss)
                 + 4.0 * epss * self.sigma_sb * (soil_t + 273.15) ** 3
                 + dG
             )
@@ -615,21 +641,21 @@ class CanopyEnergyBalanceModel:
         Esun_sw: torch.Tensor,
         Esky_sw: torch.Tensor,
         *,
-        Esun_lw: Optional[torch.Tensor] = None,
-        Esky_lw: Optional[torch.Tensor] = None,
-        wlT: Optional[torch.Tensor] = None,
+        Esun_lw: torch.Tensor | None = None,
+        Esky_lw: torch.Tensor | None = None,
+        wlT: torch.Tensor | None = None,
         meteo: EnergyBalanceMeteo,
         canopy: EnergyBalanceCanopy,
         soil: EnergyBalanceSoil,
-        options: Optional[EnergyBalanceOptions] = None,
-        biochem_options: Optional[BiochemicalOptions] = None,
-        hotspot: Optional[torch.Tensor] = None,
-        lidf: Optional[torch.Tensor] = None,
-        nlayers: Optional[int] = None,
-        Tcu0: Optional[torch.Tensor] = None,
-        Tch0: Optional[torch.Tensor] = None,
-        Tsu0: Optional[torch.Tensor] = None,
-        Tsh0: Optional[torch.Tensor] = None,
+        options: EnergyBalanceOptions | None = None,
+        biochem_options: BiochemicalOptions | None = None,
+        hotspot: torch.Tensor | None = None,
+        lidf: torch.Tensor | None = None,
+        nlayers: int | None = None,
+        Tcu0: torch.Tensor | None = None,
+        Tch0: torch.Tensor | None = None,
+        Tsu0: torch.Tensor | None = None,
+        Tsh0: torch.Tensor | None = None,
     ) -> CanopyEnergyBalanceFluorescenceResult:
         energy = self.solve(
             leafbio,
@@ -684,22 +710,22 @@ class CanopyEnergyBalanceModel:
         Esun_sw: torch.Tensor,
         Esky_sw: torch.Tensor,
         *,
-        Esun_lw: Optional[torch.Tensor] = None,
-        Esky_lw: Optional[torch.Tensor] = None,
-        wlT_forcing: Optional[torch.Tensor] = None,
+        Esun_lw: torch.Tensor | None = None,
+        Esky_lw: torch.Tensor | None = None,
+        wlT_forcing: torch.Tensor | None = None,
         meteo: EnergyBalanceMeteo,
         canopy: EnergyBalanceCanopy,
         soil: EnergyBalanceSoil,
-        options: Optional[EnergyBalanceOptions] = None,
-        biochem_options: Optional[BiochemicalOptions] = None,
-        hotspot: Optional[torch.Tensor] = None,
-        lidf: Optional[torch.Tensor] = None,
-        nlayers: Optional[int] = None,
-        Tcu0: Optional[torch.Tensor] = None,
-        Tch0: Optional[torch.Tensor] = None,
-        Tsu0: Optional[torch.Tensor] = None,
-        Tsh0: Optional[torch.Tensor] = None,
-        wlT: Optional[torch.Tensor] = None,
+        options: EnergyBalanceOptions | None = None,
+        biochem_options: BiochemicalOptions | None = None,
+        hotspot: torch.Tensor | None = None,
+        lidf: torch.Tensor | None = None,
+        nlayers: int | None = None,
+        Tcu0: torch.Tensor | None = None,
+        Tch0: torch.Tensor | None = None,
+        Tsu0: torch.Tensor | None = None,
+        Tsh0: torch.Tensor | None = None,
+        wlT: torch.Tensor | None = None,
     ) -> CanopyEnergyBalanceThermalResult:
         energy = self.solve(
             leafbio,
@@ -752,8 +778,8 @@ class CanopyEnergyBalanceModel:
         psi: torch.Tensor,
         Esun_sw: torch.Tensor,
         Esky_sw: torch.Tensor,
-        hotspot: Optional[torch.Tensor],
-        lidf: Optional[torch.Tensor],
+        hotspot: torch.Tensor | None,
+        lidf: torch.Tensor | None,
     ) -> CanopyFluorescenceResult:
         wlP = self.reflectance_model.fluspect.spectral.wlP
         wlE = self.reflectance_model.fluspect.spectral.wlE
@@ -792,9 +818,9 @@ class CanopyEnergyBalanceModel:
         tto: torch.Tensor,
         psi: torch.Tensor,
         thermal_optics: ThermalOptics,
-        hotspot: Optional[torch.Tensor],
-        lidf: Optional[torch.Tensor],
-        wlT: Optional[torch.Tensor],
+        hotspot: torch.Tensor | None,
+        lidf: torch.Tensor | None,
+        wlT: torch.Tensor | None,
     ) -> CanopyThermalRadianceResult:
         return self.thermal_model(
             lai=lai,
@@ -823,13 +849,13 @@ class CanopyEnergyBalanceModel:
         psi: torch.Tensor,
         Esun_sw: torch.Tensor,
         Esky_sw: torch.Tensor,
-        Esun_lw: Optional[torch.Tensor] = None,
-        Esky_lw: Optional[torch.Tensor] = None,
-        thermal_optics: Optional[ThermalOptics] = None,
+        Esun_lw: torch.Tensor | None = None,
+        Esky_lw: torch.Tensor | None = None,
+        thermal_optics: ThermalOptics | None = None,
         hotspot: torch.Tensor,
-        lidf: Optional[torch.Tensor],
+        lidf: torch.Tensor | None,
         nlayers: int,
-        wlT: Optional[torch.Tensor] = None,
+        wlT: torch.Tensor | None = None,
     ) -> ShortwaveRadiationResult:
         wlP = self.reflectance_model.fluspect.spectral.wlP
         device = leafopt.refl.device
@@ -841,7 +867,11 @@ class CanopyEnergyBalanceModel:
 
         if thermal_optics is None:
             thermal_optics = ThermalOptics()
-        wlT_tensor = default_thermal_wavelengths(device=device, dtype=dtype) if wlT is None else torch.as_tensor(wlT, device=device, dtype=dtype)
+        wlT_tensor = (
+            default_thermal_wavelengths(device=device, dtype=dtype)
+            if wlT is None
+            else torch.as_tensor(wlT, device=device, dtype=dtype)
+        )
         rho_thermal = self.thermal_model._broadcast_scalar_spectrum(thermal_optics.rho_thermal, batch, wlT_tensor)
         tau_thermal = self.thermal_model._broadcast_scalar_spectrum(thermal_optics.tau_thermal, batch, wlT_tensor)
         soil_thermal = self.thermal_model._broadcast_scalar_spectrum(thermal_optics.rs_thermal, batch, wlT_tensor)
@@ -949,14 +979,18 @@ class CanopyEnergyBalanceModel:
         Esky_lw: torch.Tensor,
         thermal_optics: ThermalOptics,
         hotspot: torch.Tensor,
-        lidf: Optional[torch.Tensor],
+        lidf: torch.Tensor | None,
         nlayers: int,
-        wlT: Optional[torch.Tensor],
+        wlT: torch.Tensor | None,
     ) -> IncidentThermalRadiationResult:
         device = self.reflectance_model.fluspect.device
         dtype = self.reflectance_model.fluspect.dtype
         batch = hotspot.shape[0]
-        wlT_tensor = default_thermal_wavelengths(device=device, dtype=dtype) if wlT is None else torch.as_tensor(wlT, device=device, dtype=dtype)
+        wlT_tensor = (
+            default_thermal_wavelengths(device=device, dtype=dtype)
+            if wlT is None
+            else torch.as_tensor(wlT, device=device, dtype=dtype)
+        )
         Esun = self.fluorescence_model._prepare_spectrum(Esun_lw, batch, wlT_tensor.numel())
         Esky = self.fluorescence_model._prepare_spectrum(Esky_lw, batch, wlT_tensor.numel())
 
@@ -1086,7 +1120,7 @@ class CanopyEnergyBalanceModel:
 
     def _initial_layer_state(
         self,
-        explicit: Optional[torch.Tensor],
+        explicit: torch.Tensor | None,
         default: torch.Tensor,
         batch: int,
         nlayers: int,
@@ -1096,13 +1130,15 @@ class CanopyEnergyBalanceModel:
     ) -> torch.Tensor:
         if explicit is None:
             return default.view(batch, 1).expand(batch, nlayers)
-        return self.fluorescence_model._prepare_layer_profile(explicit, self._dummy_transfer(batch, nlayers, device=device, dtype=dtype))
+        return self.fluorescence_model._prepare_layer_profile(
+            explicit, self._dummy_transfer(batch, nlayers, device=device, dtype=dtype)
+        )
 
     def _resolve_nlayers(
         self,
-        nlayers: Optional[int],
-        fV: Optional[torch.Tensor | float],
-        *profiles: Optional[torch.Tensor],
+        nlayers: int | None,
+        fV: torch.Tensor | float | None,
+        *profiles: torch.Tensor | None,
     ) -> int:
         for profile in profiles:
             if profile is None:
@@ -1126,7 +1162,9 @@ class CanopyEnergyBalanceModel:
         # i.e. it includes the canopy top (0) and excludes the bottom edge.
         return torch.exp(kV.view(batch, 1) * transfer.xl[:-1].view(1, -1))
 
-    def _prepare_soil_profile(self, value: torch.Tensor | float, batch: int, *, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    def _prepare_soil_profile(
+        self, value: torch.Tensor | float, batch: int, *, device: torch.device, dtype: torch.dtype
+    ) -> torch.Tensor:
         tensor = torch.as_tensor(value, device=device, dtype=dtype)
         if tensor.ndim == 0:
             return tensor.view(1, 1).expand(batch, 2)
@@ -1142,12 +1180,16 @@ class CanopyEnergyBalanceModel:
                 return tensor.expand(batch, 2)
         raise ValueError(f"Soil resistances must broadcast to shape ({batch}, 2)")
 
-    def _leaf_thermal_emissivity(self, optics: ThermalOptics, batch: int, *, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    def _leaf_thermal_emissivity(
+        self, optics: ThermalOptics, batch: int, *, device: torch.device, dtype: torch.dtype
+    ) -> torch.Tensor:
         rho = self._expand_batch(optics.rho_thermal, batch, device=device, dtype=dtype)
         tau = self._expand_batch(optics.tau_thermal, batch, device=device, dtype=dtype)
         return 1.0 - rho - tau
 
-    def _soil_thermal_emissivity(self, optics: ThermalOptics, batch: int, *, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    def _soil_thermal_emissivity(
+        self, optics: ThermalOptics, batch: int, *, device: torch.device, dtype: torch.dtype
+    ) -> torch.Tensor:
         soil = self._expand_batch(optics.rs_thermal, batch, device=device, dtype=dtype)
         return 1.0 - soil
 
@@ -1159,7 +1201,7 @@ class CanopyEnergyBalanceModel:
         Tsu: torch.Tensor,
         device: torch.device,
         dtype: torch.dtype,
-    ) -> Optional[torch.Tensor]:
+    ) -> torch.Tensor | None:
         if soil.soil_heat_method != 1 or soil.Tsold is None:
             return None
         history = torch.as_tensor(soil.Tsold, device=device, dtype=dtype)
@@ -1175,7 +1217,9 @@ class CanopyEnergyBalanceModel:
         updated[:, 0, 1] = Tsu
         return updated
 
-    def _expand_batch(self, value: torch.Tensor | float, batch: int, *, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    def _expand_batch(
+        self, value: torch.Tensor | float, batch: int, *, device: torch.device, dtype: torch.dtype
+    ) -> torch.Tensor:
         tensor = torch.as_tensor(value, device=device, dtype=dtype)
         if tensor.ndim == 0:
             return tensor.repeat(batch)
@@ -1195,7 +1239,9 @@ class CanopyEnergyBalanceModel:
     def _e2phot(self, wavelength_nm: torch.Tensor, energy: torch.Tensor) -> torch.Tensor:
         return energy / self._ephoton(wavelength_nm).view(*([1] * (energy.ndim - 1)), -1)
 
-    def _dummy_transfer(self, batch: int, nlayers: int, *, device: torch.device, dtype: torch.dtype) -> LayeredCanopyTransfer:
+    def _dummy_transfer(
+        self, batch: int, nlayers: int, *, device: torch.device, dtype: torch.dtype
+    ) -> LayeredCanopyTransfer:
         dummy = torch.zeros((batch, nlayers + 1), device=device, dtype=dtype)
         return LayeredCanopyTransfer(
             nlayers=nlayers,

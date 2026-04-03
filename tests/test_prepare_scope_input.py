@@ -40,7 +40,29 @@ def test_read_s2_bio_inputs_scales_and_deduplicates_times(tmp_path: Path):
     assert np.isclose(post_bio_da.sel(y=200.0, x=100.0, band="cab", time="2020-05-29").item(), 0.03)
     assert np.isclose(post_bio_da.sel(y=190.0, x=100.0, band="cm", time="2020-05-30").item(), 0.0029)
     assert post_bio_scale_da.dims == ("y", "x", "band")
-    assert np.array_equal(post_bio_scale_da["band"].values, np.array(["N", "cab", "cm", "cw", "lai", "ala", "cbrown", "n0", "m0", "n1", "m1", "BSMBrightness", "BSMlat", "BSMlon", "SMC"], dtype=object))
+    assert np.array_equal(
+        post_bio_scale_da["band"].values,
+        np.array(
+            [
+                "N",
+                "cab",
+                "cm",
+                "cw",
+                "lai",
+                "ala",
+                "cbrown",
+                "n0",
+                "m0",
+                "n1",
+                "m1",
+                "BSMBrightness",
+                "BSMlat",
+                "BSMlon",
+                "SMC",
+            ],
+            dtype=object,
+        ),
+    )
     assert np.isclose(post_bio_scale_da.sel(y=190.0, x=100.0, band="SMC").item(), 29.0)
 
 
@@ -82,12 +104,30 @@ def test_prepare_scope_input_dataset_builds_runner_ready_dataset():
 
     weather = xr.Dataset(
         {
-            "Rin": (("y", "x", "time"), np.stack([np.full((2, 2), 100.0), np.full((2, 2), 200.0), np.full((2, 2), 300.0)], axis=-1)),
-            "Rli": (("y", "x", "time"), np.stack([np.full((2, 2), 10.0), np.full((2, 2), 20.0), np.full((2, 2), 30.0)], axis=-1)),
-            "Ta": (("y", "x", "time"), np.stack([np.full((2, 2), 290.0), np.full((2, 2), 292.0), np.full((2, 2), 294.0)], axis=-1)),
-            "ea": (("y", "x", "time"), np.stack([np.full((2, 2), 1000.0), np.full((2, 2), 1100.0), np.full((2, 2), 1200.0)], axis=-1)),
-            "p": (("y", "x", "time"), np.stack([np.full((2, 2), 101000.0), np.full((2, 2), 101100.0), np.full((2, 2), 101200.0)], axis=-1)),
-            "u": (("y", "x", "time"), np.stack([np.full((2, 2), 2.0), np.full((2, 2), 3.0), np.full((2, 2), 4.0)], axis=-1)),
+            "Rin": (
+                ("y", "x", "time"),
+                np.stack([np.full((2, 2), 100.0), np.full((2, 2), 200.0), np.full((2, 2), 300.0)], axis=-1),
+            ),
+            "Rli": (
+                ("y", "x", "time"),
+                np.stack([np.full((2, 2), 10.0), np.full((2, 2), 20.0), np.full((2, 2), 30.0)], axis=-1),
+            ),
+            "Ta": (
+                ("y", "x", "time"),
+                np.stack([np.full((2, 2), 290.0), np.full((2, 2), 292.0), np.full((2, 2), 294.0)], axis=-1),
+            ),
+            "ea": (
+                ("y", "x", "time"),
+                np.stack([np.full((2, 2), 1000.0), np.full((2, 2), 1100.0), np.full((2, 2), 1200.0)], axis=-1),
+            ),
+            "p": (
+                ("y", "x", "time"),
+                np.stack([np.full((2, 2), 101000.0), np.full((2, 2), 101100.0), np.full((2, 2), 101200.0)], axis=-1),
+            ),
+            "u": (
+                ("y", "x", "time"),
+                np.stack([np.full((2, 2), 2.0), np.full((2, 2), 3.0), np.full((2, 2), 4.0)], axis=-1),
+            ),
         },
         coords={"y": y, "x": x, "time": weather_times},
     )
@@ -98,12 +138,28 @@ def test_prepare_scope_input_dataset_builds_runner_ready_dataset():
                 np.array(
                     [
                         [
-                            [np.datetime64("2020-06-01T00:15:00"), np.datetime64("NaT"), np.datetime64("2020-06-01T01:15:00")],
-                            [np.datetime64("2020-06-01T00:45:00"), np.datetime64("NaT"), np.datetime64("2020-06-01T01:45:00")],
+                            [
+                                np.datetime64("2020-06-01T00:15:00"),
+                                np.datetime64("NaT"),
+                                np.datetime64("2020-06-01T01:15:00"),
+                            ],
+                            [
+                                np.datetime64("2020-06-01T00:45:00"),
+                                np.datetime64("NaT"),
+                                np.datetime64("2020-06-01T01:45:00"),
+                            ],
                         ],
                         [
-                            [np.datetime64("2020-06-01T00:15:00"), np.datetime64("NaT"), np.datetime64("2020-06-01T01:15:00")],
-                            [np.datetime64("2020-06-01T00:45:00"), np.datetime64("NaT"), np.datetime64("2020-06-01T01:45:00")],
+                            [
+                                np.datetime64("2020-06-01T00:15:00"),
+                                np.datetime64("NaT"),
+                                np.datetime64("2020-06-01T01:15:00"),
+                            ],
+                            [
+                                np.datetime64("2020-06-01T00:45:00"),
+                                np.datetime64("NaT"),
+                                np.datetime64("2020-06-01T01:45:00"),
+                            ],
                         ],
                     ],
                     dtype="datetime64[ns]",
@@ -136,13 +192,39 @@ def test_prepare_scope_input_dataset_builds_runner_ready_dataset():
     post_bio_scale = xr.DataArray(
         np.array(
             [
-                [[1.5, 40.0, 0.010, 0.020, 2.0, 50.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.6, 45.0, 90.0, 0.2], [1.6, 42.0, 0.012, 0.022, 2.4, 48.0, 0.2, 0.0, 0.0, 0.0, 0.0, 0.7, 46.0, 91.0, 0.3]],
-                [[1.4, 38.0, 0.011, 0.019, 1.8, 47.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.8, 47.0, 92.0, 0.4], [1.7, 43.0, 0.013, 0.024, 2.7, 51.0, 0.3, 0.0, 0.0, 0.0, 0.0, 0.9, 48.0, 93.0, 0.5]],
+                [
+                    [1.5, 40.0, 0.010, 0.020, 2.0, 50.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.6, 45.0, 90.0, 0.2],
+                    [1.6, 42.0, 0.012, 0.022, 2.4, 48.0, 0.2, 0.0, 0.0, 0.0, 0.0, 0.7, 46.0, 91.0, 0.3],
+                ],
+                [
+                    [1.4, 38.0, 0.011, 0.019, 1.8, 47.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.8, 47.0, 92.0, 0.4],
+                    [1.7, 43.0, 0.013, 0.024, 2.7, 51.0, 0.3, 0.0, 0.0, 0.0, 0.0, 0.9, 48.0, 93.0, 0.5],
+                ],
             ],
             dtype=np.float64,
         ),
         dims=("y", "x", "band"),
-        coords={"y": y, "x": x, "band": ["N", "cab", "cm", "cw", "lai", "ala", "cbrown", "n0", "m0", "n1", "m1", "BSMBrightness", "BSMlat", "BSMlon", "SMC"]},
+        coords={
+            "y": y,
+            "x": x,
+            "band": [
+                "N",
+                "cab",
+                "cm",
+                "cw",
+                "lai",
+                "ala",
+                "cbrown",
+                "n0",
+                "m0",
+                "n1",
+                "m1",
+                "BSMBrightness",
+                "BSMlat",
+                "BSMlon",
+                "SMC",
+            ],
+        },
     )
 
     prepared = prepare_scope_input_dataset(weather, observation, post_bio, post_bio_scale)

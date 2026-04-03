@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Callable, Mapping, Sequence
 
 import pandas as pd
 import torch
@@ -13,7 +13,6 @@ from .. import ScopeGridRunner, campbell_lidf
 from ..config import SimulationConfig
 from ..data import ScopeGridDataModule
 from ..io import NetCDFWriteOptions, validate_scope_dataset, write_netcdf_dataset
-
 
 _WORKFLOW_RUNNERS: Mapping[str, str] = {
     "scope": "run_scope_dataset",
@@ -45,26 +44,38 @@ def build_parser() -> argparse.ArgumentParser:
         default="scope",
         help="Workflow to execute. 'scope' uses dataset attrs / option overrides for high-level dispatch.",
     )
-    parser.add_argument("--scope-root", help="Optional upstream SCOPE root. Used when dataset attrs do not carry absolute asset paths.")
+    parser.add_argument(
+        "--scope-root", help="Optional upstream SCOPE root. Used when dataset attrs do not carry absolute asset paths."
+    )
     parser.add_argument("--optipar-file", help="Optional FLUSPECT parameter MAT file override.")
     parser.add_argument("--soil-file", help="Optional soil spectra file override.")
     parser.add_argument("--device", default="cpu", help="Torch device for execution.")
     parser.add_argument("--dtype", choices=("float32", "float64"), default="float32", help="Torch dtype for execution.")
     parser.add_argument("--chunk-size", type=int, default=1024, help="Batch chunk size for ROI/time execution.")
     parser.add_argument("--lidfa", type=float, default=57.0, help="Campbell mean leaf angle used to build the LIDF.")
-    parser.add_argument("--default-hotspot", type=float, default=0.2, help="Fallback hotspot value when no hotspot variable is present.")
+    parser.add_argument(
+        "--default-hotspot", type=float, default=0.2, help="Fallback hotspot value when no hotspot variable is present."
+    )
     parser.add_argument("--nlayers", type=int, help="Optional layer count override for layered workflows.")
-    parser.add_argument("--soil-heat-method", type=int, default=2, help="Soil heat method for coupled energy-balance workflows.")
+    parser.add_argument(
+        "--soil-heat-method", type=int, default=2, help="Soil heat method for coupled energy-balance workflows."
+    )
     parser.add_argument("--calc-fluor", choices=(0, 1), type=int, help="Override calc_fluor for workflow='scope'.")
     parser.add_argument("--calc-planck", choices=(0, 1), type=int, help="Override calc_planck for workflow='scope'.")
-    parser.add_argument("--calc-directional", choices=(0, 1), type=int, help="Override calc_directional for workflow='scope'.")
-    parser.add_argument("--calc-vert-profiles", choices=(0, 1), type=int, help="Override calc_vert_profiles for workflow='scope'.")
+    parser.add_argument(
+        "--calc-directional", choices=(0, 1), type=int, help="Override calc_directional for workflow='scope'."
+    )
+    parser.add_argument(
+        "--calc-vert-profiles", choices=(0, 1), type=int, help="Override calc_vert_profiles for workflow='scope'."
+    )
     parser.add_argument(
         "--netcdf-engine",
         choices=("netcdf4", "h5netcdf", "scipy"),
         help="Optional NetCDF backend override for writing outputs.",
     )
-    parser.add_argument("--compression-level", type=int, default=4, help="Compression level for HDF5-backed NetCDF engines.")
+    parser.add_argument(
+        "--compression-level", type=int, default=4, help="Compression level for HDF5-backed NetCDF engines."
+    )
     parser.add_argument("--no-compression", action="store_true", help="Disable NetCDF compression on output.")
     parser.add_argument("--summary-json", help="Optional JSON path for a small run summary.")
     return parser
@@ -154,21 +165,25 @@ def _run_workflow(args: argparse.Namespace, runner: ScopeGridRunner, data_module
         }
         if scope_options:
             kwargs["scope_options"] = scope_options
-    if workflow in {
-        "scope",
-        "reflectance",
-        "directional-reflectance",
-        "reflectance-profiles",
-        "layered-fluorescence",
-        "directional-fluorescence",
-        "fluorescence-profiles",
-        "thermal",
-        "directional-thermal",
-        "thermal-profiles",
-        "biochemical-fluorescence",
-        "energy-balance-fluorescence",
-        "energy-balance-thermal",
-    } and args.nlayers is not None:
+    if (
+        workflow
+        in {
+            "scope",
+            "reflectance",
+            "directional-reflectance",
+            "reflectance-profiles",
+            "layered-fluorescence",
+            "directional-fluorescence",
+            "fluorescence-profiles",
+            "thermal",
+            "directional-thermal",
+            "thermal-profiles",
+            "biochemical-fluorescence",
+            "energy-balance-fluorescence",
+            "energy-balance-thermal",
+        }
+        and args.nlayers is not None
+    ):
         kwargs["nlayers"] = args.nlayers
     if workflow in {"energy-balance-fluorescence", "energy-balance-thermal"}:
         kwargs["soil_heat_method"] = args.soil_heat_method
@@ -203,7 +218,9 @@ def _infer_roi_bounds(dataset: xr.Dataset) -> tuple[float, float, float, float]:
 def _summarize(dataset: xr.Dataset) -> dict[str, object]:
     summary = {
         "product": dataset.attrs.get("scope_product", ""),
-        "components": dataset.attrs.get("scope_components", "").split(",") if dataset.attrs.get("scope_components") else [],
+        "components": dataset.attrs.get("scope_components", "").split(",")
+        if dataset.attrs.get("scope_components")
+        else [],
         "dims": {name: int(size) for name, size in dataset.sizes.items()},
         "variables": sorted(dataset.data_vars),
     }
