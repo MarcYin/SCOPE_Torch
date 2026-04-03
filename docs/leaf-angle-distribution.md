@@ -23,7 +23,7 @@ G_s = \sum_{i} \frac{\chi_s(\theta_l^{(i)})}{\cos\theta_s}\, f(\theta_l^{(i)})
 $$
 
 where $\theta_l^{(i)}$ are the discrete leaf inclination bins, $\chi_s$ is the
-Ross–Nilson G-function (projected area of a leaf in the solar direction), and
+Ross-Nilson G-function (projected area of a leaf in the solar direction), and
 $f(\theta_l)$ is the LAD weight.  An analogous summation produces $G_o$ for
 the observer direction.  These two coefficients ($k_s$, $k_o$) propagate into
 every reflectance, transmittance, and gap-probability quantity computed by the
@@ -34,6 +34,16 @@ extinction at small zenith angles and produces high near-infrared reflectance,
 whereas an erectophile canopy (mostly vertical leaves) transmits near-nadir
 light deep into the canopy and produces lower reflectance with a weaker
 hotspot.
+
+
+## Distribution shapes at a glance
+
+The figure below shows probability vs. leaf inclination angle for all three
+model families.  Higher probability at low angles means more horizontal leaves
+(planophile); higher probability near 90 deg means more vertical leaves
+(erectophile).
+
+![Leaf angle distribution shapes](assets/lad_distributions.svg)
 
 
 ## 1. Verhoef Two-Parameter Bimodal (1998)
@@ -61,11 +71,11 @@ by de Wit (1965):
 
 | Name          | a      | b      | Description                              |
 |---------------|--------|--------|------------------------------------------|
-| Planophile    |  1.0   |  0.0   | Horizontal leaves; peak at 0°            |
-| Erectophile   | −1.0   |  0.0   | Vertical leaves; peak near 90°           |
-| Plagiophile   |  0.0   | −1.0   | Oblique leaves; peak near 45°            |
-| Extremophile  |  0.0   |  1.0   | Bimodal — very flat + very steep          |
-| Spherical     | −0.35  | −0.15  | Uniform in solid-angle space              |
+| Planophile    |  1.0   |  0.0   | Horizontal leaves; peak at 0 deg         |
+| Erectophile   | -1.0   |  0.0   | Vertical leaves; peak near 90 deg        |
+| Plagiophile   |  0.0   | -1.0   | Oblique leaves; peak near 45 deg         |
+| Extremophile  |  0.0   |  1.0   | Bimodal: very flat + very steep           |
+| Spherical     | -0.35  | -0.15  | Uniform in solid-angle space              |
 | Uniform       |  0.0   |  0.0   | Uniform in inclination-angle space        |
 
 ### SCOPE-RTM API
@@ -73,7 +83,7 @@ by de Wit (1965):
 ```python
 from scope import scope_lidf
 
-# Planophile distribution → 13-element tensor
+# Planophile distribution -> 13-element tensor
 lidf = scope_lidf(lidfa=1.0, lidfb=0.0)
 
 # Spherical
@@ -81,9 +91,9 @@ lidf = scope_lidf(lidfa=-0.35, lidfb=-0.15)
 ```
 
 The returned tensor has 13 elements corresponding to the angular bins centred
-at {5, 15, 25, 35, 45, 55, 65, 75, 81, 83, 85, 87, 89}° — eight coarse
-10° bins followed by five fine 2° bins.  The finer discretization near 90°
-captures the rapid variation of near-vertical leaf populations.
+at {5, 15, 25, 35, 45, 55, 65, 75, 81, 83, 85, 87, 89} deg --- eight coarse
+10 deg bins followed by five fine 2 deg bins.  The finer discretization near
+90 deg captures the rapid variation of near-vertical leaf populations.
 
 ### Reference
 
@@ -101,7 +111,7 @@ captures the rapid variation of near-vertical leaf populations.
 
 Campbell (1986, 1990) models the leaf population as if the leaf normals were
 distributed uniformly over the surface of an **ellipsoid of revolution**.  A
-single parameter — the mean leaf inclination angle $\bar\alpha$ (degrees) —
+single parameter --- the mean leaf inclination angle $\bar\alpha$ (degrees) ---
 controls the ellipsoid eccentricity:
 
 $$
@@ -122,7 +132,7 @@ evaluated in three regimes:
 
 The key property is that a **single, physically interpretable parameter**
 (mean leaf angle) smoothly interpolates between planophile ($\bar\alpha\to 0$)
-and erectophile ($\bar\alpha\to 90$), with $\bar\alpha \approx 57°$
+and erectophile ($\bar\alpha\to 90$), with $\bar\alpha \approx 57$ deg
 recovering the spherical distribution.
 
 ### SCOPE-RTM API
@@ -137,7 +147,7 @@ lidf = campbell_lidf(alpha=57.0, n_elements=13)
 lidf = campbell_lidf(alpha=10.0)
 ```
 
-The `n_elements` parameter controls the number of uniform bins spanning 0–90°.
+The `n_elements` parameter controls the number of uniform bins spanning 0-90 deg.
 When used with `FourSAILModel`, set `n_elements` to match the model's
 `n_angles` constructor argument (default 13 for SCOPE, 18 for PROSAIL
 convention).
@@ -146,12 +156,12 @@ convention).
 
 > Campbell, G.S. (1986). Extinction coefficients for radiation in plant canopies
 > calculated using an ellipsoidal inclination angle distribution.
-> *Agricultural and Forest Meteorology*, 36(4), 317–321.
+> *Agricultural and Forest Meteorology*, 36(4), 317-321.
 > [doi:10.1016/0168-1923(86)90010-9](https://doi.org/10.1016/0168-1923(86)90010-9)
 >
 > Campbell, G.S. (1990). Derivation of an angle density function for canopies
 > with ellipsoidal leaf angle distributions. *Agricultural and Forest
-> Meteorology*, 49(3), 173–176.
+> Meteorology*, 49(3), 173-176.
 > [doi:10.1016/0168-1923(90)90030-A](https://doi.org/10.1016/0168-1923(90)90030-A)
 
 
@@ -161,7 +171,7 @@ convention).
 
 Goel and Strebel (1984) proposed using the **Beta probability density** to
 represent leaf angle distributions.  The Beta density on the normalized
-interval $t = \theta / (π/2)$ is
+interval $t = \theta / (\pi/2)$ is
 
 $$
 f(t;\,\mu_b,\,\nu_b) = \frac{t^{\mu_b - 1}\,(1 - t)^{\nu_b - 1}}
@@ -204,19 +214,131 @@ lidf = beta_lidf(mu=45.0, nu=3.0, n_elements=13)
 
 > Goel, N.S. & Strebel, D.E. (1984). Simple Beta distribution representation
 > of leaf orientation in vegetation canopies. *Agronomy Journal*, 76(5),
-> 800–802.
+> 800-802.
 > [doi:10.2134/agronj1984.00021962007600050021x](https://doi.org/10.2134/agronj1984.00021962007600050021x)
 
+
+---
+
+## Experiment results
+
+The tables and figures below were generated by
+`examples/leaf_angle_distribution_comparison.py` with SZA = 30 deg,
+VZA = nadir, LAI = 3, hotspot = 0.05, and flat soil reflectance = 0.1.
+
+### Extinction coefficients
+
+The extinction coefficients $k_s$ (solar), $k_o$ (observer), and the
+bi-Lambertian scattering factor $bf$ quantify how each LAD shapes canopy
+light interception.  Higher $k_s$ means faster beam attenuation; higher $bf$
+means more isotropic scattering.
+
+![Extinction coefficients by LAD](assets/lad_extinction_coefficients.svg)
+
+#### Verhoef distributions
+
+| Distribution   | a     | b     | ks     | ko     | bf     |
+|----------------|-------|-------|--------|--------|--------|
+| Planophile     |  1.0  |  0.0  | 0.9638 | 0.9633 | 0.9358 |
+| Erectophile    | -1.0  |  0.0  | 0.4025 | 0.1476 | 0.0614 |
+| Plagiophile    |  0.0  | -1.0  | 0.7028 | 0.7005 | 0.5000 |
+| Extremophile   |  0.0  |  1.0  | 0.6822 | 0.5349 | 0.4982 |
+| Spherical      | -0.35 | -0.15 | 0.5684 | 0.4911 | 0.3227 |
+| Uniform        |  0.0  |  0.0  | 0.6870 | 0.6374 | 0.5003 |
+
+**Key observations:**
+
+- Planophile leaves intercept nearly all incoming light at this geometry
+  (ks = 0.96), while erectophile leaves allow most light through (ks = 0.40).
+- The difference in $k_o$ is even more dramatic: erectophile gives
+  ko = 0.15 vs. planophile ko = 0.96 --- a 6x difference that strongly
+  affects directional reflectance.
+- The extremophile is bimodal yet produces intermediate coefficients because
+  its two modes partially cancel.
+
+#### Campbell distributions
+
+| Distribution          | alpha  | ks     | ko     | bf     |
+|-----------------------|--------|--------|--------|--------|
+| alpha=10 (planophile) | 10 deg | 0.9438 | 0.9380 | 0.9022 |
+| alpha=30              | 30 deg | 0.7329 | 0.6819 | 0.5653 |
+| alpha=57 (spherical)  | 57 deg | 0.4866 | 0.3178 | 0.1909 |
+| alpha=70              | 70 deg | 0.3982 | 0.1372 | 0.0528 |
+| alpha=85 (erectophile)| 85 deg | 0.3688 | 0.0308 | 0.0026 |
+
+**Key observations:**
+
+- Campbell smoothly interpolates from planophile to erectophile with a single
+  parameter.  The transition is nonlinear: most of the ks change happens
+  between 10 deg and 57 deg.
+- At alpha = 85 deg, $k_o$ drops to 0.03 --- near-vertical leaves are nearly
+  invisible to a nadir observer.
+- Campbell alpha = 57 deg produces lower ks (0.49) than Verhoef Spherical
+  (0.57) because the two parameterizations define "spherical" differently:
+  Campbell uses solid-angle uniformity while Verhoef's (a=-0.35, b=-0.15) is
+  an empirical approximation.
+
+#### Beta (Goel-Strebel) distributions
+
+| Distribution       | mu     | nu  | ks     | ko     | bf     |
+|--------------------|--------|-----|--------|--------|--------|
+| Beta mu=20, nu=3   | 20 deg | 3   | 0.8168 | 0.7933 | 0.7002 |
+| Beta mu=45, nu=2   | 45 deg | 2   | 0.5899 | 0.4681 | 0.3494 |
+| Beta mu=57, nu=4   | 57 deg | 4   | 0.4616 | 0.2859 | 0.1538 |
+| Beta mu=75, nu=3   | 75 deg | 3   | 0.3977 | 0.1283 | 0.0514 |
+
+**Key observations:**
+
+- At matching mean angles, the Beta distribution produces similar coefficients
+  to Campbell, but the additional $\nu$ parameter controls the peak width.
+- Higher $\nu$ (more peaked) at the same mean angle gives slightly lower
+  coefficients because the distribution concentrates weight at a single
+  angle rather than spreading it.
+
+
+### Impact on canopy reflectance (BRF)
+
+The figure below shows bidirectional reflectance factor (BRF) in the principal
+plane for representative distributions from each family.  Negative VZA is the
+forward-scatter direction; positive VZA is the backscatter direction (toward
+the sun).
+
+![BRF comparison across LADs](assets/lad_brf_comparison.svg)
+
+**Key observations:**
+
+- **Red band (670 nm):** LAD has a modest effect on absolute reflectance
+  (range ~0.015-0.04) but a strong effect on angular shape.  Planophile
+  canopies show a more pronounced hotspot peak and higher overall BRF;
+  erectophile canopies are nearly flat in the angular domain.
+
+- **NIR band (800 nm):** LAD effects are much larger in absolute terms
+  (range ~0.25-0.55).  Planophile canopies reflect much more NIR because
+  horizontal leaves create a dense reflective layer near the top; erectophile
+  canopies allow NIR to penetrate deeper, increasing absorption and soil
+  interaction.
+
+- **Hotspot asymmetry:** All distributions show a reflectance peak near
+  VZA = +30 deg (the hotspot, where the observer looks along the solar beam).
+  Planophile canopies have the sharpest hotspot; erectophile canopies have
+  the weakest because their gap fraction is already high at nadir.
+
+- **Cross-family agreement:** Verhoef Spherical and Campbell alpha=57 produce
+  similar angular shapes but differ in magnitude, confirming that their
+  "spherical" definitions are not identical.
+
+
+---
 
 ## Comparison: which LAD to use?
 
 | Criterion                          | Verhoef        | Campbell       | Beta           |
 |------------------------------------|----------------|----------------|----------------|
-| Number of parameters               | 2 (a, b)       | 1 (α)          | 2 (μ, ν)      |
+| Number of parameters               | 2 (a, b)       | 1 (alpha)      | 2 (mu, nu)    |
 | Bimodal distributions              | Yes            | No             | No             |
 | Physical interpretability          | Moderate       | High           | Low            |
 | PROSAIL compatibility              | Yes (type 1)   | Yes (type 2)   | No             |
-| Canonical archetypes (de Wit)      | Direct mapping | Via α only     | Indirect       |
+| Canonical archetypes (de Wit)      | Direct mapping | Via alpha only  | Indirect       |
 | Inversion / retrieval friendliness | Good           | Best (1 param) | Fair           |
 
 **Recommendations:**
@@ -253,7 +375,7 @@ sail_scope = FourSAILModel(n_angles=13)
 
 # Both models can also use the other's LIDF by matching n_elements:
 lidf_campbell_13 = campbell_lidf(alpha=57.0, n_elements=13)
-# Use with the default FourSAILModel(n_angles=13) — works seamlessly
+# Use with the default FourSAILModel(n_angles=13) -- works seamlessly
 ```
 
 
@@ -267,19 +389,21 @@ A self-contained comparison script is provided at
 python examples/leaf_angle_distribution_comparison.py --no-plot
 
 # Full run with figures (requires matplotlib)
-python examples/leaf_angle_distribution_comparison.py --scope-root upstream/SCOPE
+MPLBACKEND=Agg python examples/leaf_angle_distribution_comparison.py \
+    --scope-root upstream/SCOPE
 
-# Custom output directory
-python examples/leaf_angle_distribution_comparison.py --output-dir results/lad/
+# Generate figures into docs/assets for documentation
+MPLBACKEND=Agg python examples/leaf_angle_distribution_comparison.py \
+    --scope-root upstream/SCOPE --output-dir docs/assets
 ```
 
 The script produces:
 
-1. **`lad_distributions.png`** — Polar histogram of all LAD variants grouped
-   by family
-2. **`lad_extinction_coefficients.png`** — Bar chart comparing $k_s$ and $k_o$
-   across distributions
-3. **`lad_brf_comparison.png`** — Principal-plane BRF at 670 nm and 800 nm
-   for representative distributions
-4. **`leaf_angle_distribution_comparison.json`** — Machine-readable summary of
-   all distributions, parameters, and extinction coefficients
+1. **`lad_distributions.svg`** --- Probability vs. inclination angle for all
+   15 LAD variants, grouped by family
+2. **`lad_extinction_coefficients.svg`** --- Grouped bar chart of $k_s$,
+   $k_o$, and $bf$ across all distributions
+3. **`lad_brf_comparison.svg`** --- Principal-plane BRF at 670 nm and 800 nm
+   for 8 representative distributions
+4. **`leaf_angle_distribution_comparison.json`** --- Machine-readable summary
+   of all distributions, parameters, and extinction coefficients

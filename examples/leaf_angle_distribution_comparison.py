@@ -366,8 +366,15 @@ def compute_brf_vs_vza(
 # ---------------------------------------------------------------------------
 
 
+def _savefig(fig, output_dir: Path, name: str) -> None:
+    """Save figure as both PNG and SVG."""
+    fig.savefig(output_dir / f"{name}.png", dpi=150, bbox_inches="tight")
+    fig.savefig(output_dir / f"{name}.svg", bbox_inches="tight")
+    print(f"  Saved {output_dir / name}.png + .svg")
+
+
 def plot_distributions(distributions: dict, output_dir: Path) -> None:
-    """Create polar histogram of all LAD variants grouped by family."""
+    """Create a Cartesian line plot of each LAD family (probability vs angle)."""
     try:
         import matplotlib.cm as cm
         import matplotlib.pyplot as plt
@@ -380,32 +387,37 @@ def plot_distributions(distributions: dict, output_dir: Path) -> None:
         fam = dist["family"]
         families.setdefault(fam, []).append((name, dist))
 
-    fig, axes = plt.subplots(1, len(families), figsize=(6 * len(families), 6), subplot_kw={"projection": "polar"})
+    fig, axes = plt.subplots(1, len(families), figsize=(6 * len(families), 5), sharey=True)
     if len(families) == 1:
         axes = [axes]
 
     for ax, (fam_name, members) in zip(axes, families.items()):
-        ax.set_title(fam_name, fontsize=12, pad=20)
-        ax.set_theta_zero_location("N")
-        ax.set_theta_direction(-1)
-        ax.set_rlabel_position(135)
+        ax.set_title(fam_name, fontsize=12, fontweight="bold")
         ax.set_xlabel("Leaf inclination angle (deg)")
 
-        colors = cm.tab10(np.linspace(0, 1, len(members)))
+        colors = cm.tab10(np.linspace(0, 1, max(len(members), 1)))
         for (name, dist), color in zip(members, colors):
             angles_deg = dist["angles"].cpu().numpy()
-            angles_rad = np.deg2rad(angles_deg)
             lidf = dist["lidf"].cpu().numpy()
             short_name = name.split(": ", 1)[-1]
-            ax.plot(angles_rad, lidf, "o-", color=color, label=short_name, markersize=4, linewidth=1.5)
+            ax.fill_between(angles_deg, 0, lidf, alpha=0.12, color=color)
+            ax.plot(angles_deg, lidf, "o-", color=color, label=short_name, markersize=3, linewidth=1.5)
 
-        ax.legend(loc="upper right", bbox_to_anchor=(1.35, 1.0), fontsize=8)
+        ax.set_xlim(0, 90)
+        ax.set_ylim(bottom=0)
+        ax.legend(fontsize=8, loc="upper right")
+        ax.grid(True, alpha=0.25)
 
-    fig.suptitle("Leaf Angle Distribution Functions — Probability vs Inclination Angle", fontsize=14, y=1.02)
+    axes[0].set_ylabel("Probability")
+    fig.suptitle(
+        "Leaf Angle Distribution Functions",
+        fontsize=14,
+        fontweight="bold",
+        y=1.01,
+    )
     fig.tight_layout()
-    fig.savefig(output_dir / "lad_distributions.png", dpi=150, bbox_inches="tight")
+    _savefig(fig, output_dir, "lad_distributions")
     plt.close(fig)
-    print(f"  Saved {output_dir / 'lad_distributions.png'}")
 
 
 def plot_brf_comparison(brf_results: dict, distributions: dict, output_dir: Path) -> None:
@@ -446,29 +458,30 @@ def plot_brf_comparison(brf_results: dict, distributions: dict, output_dir: Path
         data = brf_results[name]
         vza = data["vza"]
         short = name.split(": ", 1)[-1]
-        ax1.plot(vza, data["brf_red_670nm"], "-", color=color, label=short, linewidth=1.5)
-        ax2.plot(vza, data["brf_nir_800nm"], "-", color=color, label=short, linewidth=1.5)
+        ax1.plot(vza, data["brf_red_670nm"], "-", color=color, label=short, linewidth=1.8)
+        ax2.plot(vza, data["brf_nir_800nm"], "-", color=color, label=short, linewidth=1.8)
 
     for ax, band in [(ax1, "Red (670 nm)"), (ax2, "NIR (800 nm)")]:
-        ax.set_xlabel("View Zenith Angle (deg)\n← Forward scatter     Backscatter →")
+        ax.set_xlabel("View Zenith Angle (deg)\n\u2190 Forward scatter     Backscatter \u2192")
         ax.set_ylabel("Bidirectional Reflectance Factor (BRF)")
-        ax.set_title(f"Principal Plane BRF — {band}")
-        ax.axvline(0, color="gray", linestyle=":", linewidth=0.5)
-        ax.legend(fontsize=8)
+        ax.set_title(f"Principal Plane BRF \u2014 {band}", fontweight="bold")
+        ax.axvline(0, color="gray", linestyle=":", linewidth=0.8)
+        ax.legend(fontsize=8, loc="upper left")
         ax.grid(True, alpha=0.3)
 
     fig.suptitle(
-        "Impact of Leaf Angle Distribution on Canopy Reflectance\n(LAI=3, SZA=30°, hotspot=0.05, flat soil=0.1)",
+        "Impact of Leaf Angle Distribution on Canopy Reflectance\n"
+        "(LAI = 3, SZA = 30\u00b0, hotspot = 0.05, flat soil reflectance = 0.1)",
         fontsize=13,
+        fontweight="bold",
     )
     fig.tight_layout()
-    fig.savefig(output_dir / "lad_brf_comparison.png", dpi=150, bbox_inches="tight")
+    _savefig(fig, output_dir, "lad_brf_comparison")
     plt.close(fig)
-    print(f"  Saved {output_dir / 'lad_brf_comparison.png'}")
 
 
 def plot_extinction_coefficients(ext_results: dict, output_dir: Path) -> None:
-    """Bar chart of ks and ko for each distribution."""
+    """Grouped bar chart of ks, ko, and bf for each distribution."""
     if not ext_results:
         return
     try:
@@ -480,22 +493,26 @@ def plot_extinction_coefficients(ext_results: dict, output_dir: Path) -> None:
     short_names = [n.split(": ", 1)[-1] for n in names]
     ks_vals = [ext_results[n]["ks"] for n in names]
     ko_vals = [ext_results[n]["ko"] for n in names]
+    bf_vals = [ext_results[n]["bf"] for n in names]
 
-    fig, ax = plt.subplots(figsize=(12, 5))
+    fig, ax = plt.subplots(figsize=(14, 5))
     x = np.arange(len(names))
-    w = 0.35
-    ax.bar(x - w / 2, ks_vals, w, label="ks (solar extinction)", color="#e07b39")
-    ax.bar(x + w / 2, ko_vals, w, label="ko (observer extinction)", color="#3971e0")
+    w = 0.25
+    ax.bar(x - w, ks_vals, w, label="ks (solar extinction)", color="#e07b39")
+    ax.bar(x, ko_vals, w, label="ko (observer extinction)", color="#3971e0")
+    ax.bar(x + w, bf_vals, w, label="bf (bilamb. scattering)", color="#39b54a")
     ax.set_xticks(x)
     ax.set_xticklabels(short_names, rotation=45, ha="right", fontsize=8)
-    ax.set_ylabel("Extinction coefficient")
-    ax.set_title("Canopy Extinction Coefficients by Leaf Angle Distribution\n(SZA=30°, VZA=0°)")
-    ax.legend()
+    ax.set_ylabel("Coefficient value")
+    ax.set_title(
+        "Canopy Extinction and Scattering Coefficients by LAD\n(SZA = 30\u00b0, VZA = nadir)",
+        fontweight="bold",
+    )
+    ax.legend(fontsize=9)
     ax.grid(True, axis="y", alpha=0.3)
     fig.tight_layout()
-    fig.savefig(output_dir / "lad_extinction_coefficients.png", dpi=150, bbox_inches="tight")
+    _savefig(fig, output_dir, "lad_extinction_coefficients")
     plt.close(fig)
-    print(f"  Saved {output_dir / 'lad_extinction_coefficients.png'}")
 
 
 # ---------------------------------------------------------------------------
