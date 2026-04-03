@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, fields
-from typing import Optional, Tuple
 
 import torch
 
 
-def scope_litab(*, device: Optional[torch.device] = None, dtype: Optional[torch.dtype] = None) -> torch.Tensor:
+def scope_litab(*, device: torch.device | None = None, dtype: torch.dtype | None = None) -> torch.Tensor:
     device = device or torch.device("cpu")
     dtype = dtype or torch.float64
     coarse = torch.arange(5.0, 76.0, 10.0, device=device, dtype=dtype)
@@ -15,7 +13,7 @@ def scope_litab(*, device: Optional[torch.device] = None, dtype: Optional[torch.
     return torch.cat([coarse, fine], dim=0)
 
 
-def scope_lazitab(*, device: Optional[torch.device] = None, dtype: Optional[torch.dtype] = None) -> torch.Tensor:
+def scope_lazitab(*, device: torch.device | None = None, dtype: torch.dtype | None = None) -> torch.Tensor:
     device = device or torch.device("cpu")
     dtype = dtype or torch.float64
     return torch.arange(5.0, 356.0, 10.0, device=device, dtype=dtype)
@@ -25,8 +23,8 @@ def scope_lidf(
     lidfa: float,
     lidfb: float = 0.0,
     *,
-    device: Optional[torch.device] = None,
-    dtype: Optional[torch.dtype] = None,
+    device: torch.device | None = None,
+    dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
     """SCOPE/SAIL leaf-angle distribution using the upstream `leafangles.m` discretization."""
 
@@ -69,7 +67,9 @@ def scope_lidf(
     return lidf / lidf.sum().clamp(min=1e-12)
 
 
-def campbell_lidf(alpha: float, n_elements: int = 18, *, device: Optional[torch.device] = None, dtype: Optional[torch.dtype] = None) -> torch.Tensor:
+def campbell_lidf(
+    alpha: float, n_elements: int = 18, *, device: torch.device | None = None, dtype: torch.dtype | None = None
+) -> torch.Tensor:
     """Compute an ellipsoidal leaf inclination distribution (Campbell, 1990).
 
     Parameters
@@ -85,9 +85,7 @@ def campbell_lidf(alpha: float, n_elements: int = 18, *, device: Optional[torch.
     device = device or torch.device("cpu")
     dtype = dtype or torch.float64
     alpha_tensor = torch.as_tensor(alpha, dtype=dtype, device=device)
-    excent = torch.exp(
-        -1.6184e-5 * alpha_tensor**3 + 2.1145e-3 * alpha_tensor**2 - 1.2390e-1 * alpha_tensor + 3.2491
-    )
+    excent = torch.exp(-1.6184e-5 * alpha_tensor**3 + 2.1145e-3 * alpha_tensor**2 - 1.2390e-1 * alpha_tensor + 3.2491)
     step = 90.0 / n_elements
     freq = torch.zeros(n_elements, dtype=dtype, device=device)
     for idx in range(n_elements):
@@ -147,7 +145,9 @@ class FourSAILResult:
 class FourSAILModel:
     """PyTorch translation of the 4-stream canopy model (SAILh)."""
 
-    def __init__(self, lidf: Optional[torch.Tensor] = None, n_angles: int = 18, *, litab: Optional[torch.Tensor] = None) -> None:
+    def __init__(
+        self, lidf: torch.Tensor | None = None, n_angles: int = 18, *, litab: torch.Tensor | None = None
+    ) -> None:
         self.default_lidf = lidf
         if litab is not None:
             self._litab = torch.as_tensor(litab, dtype=torch.float64)
@@ -173,7 +173,7 @@ class FourSAILModel:
         tts: torch.Tensor,
         tto: torch.Tensor,
         psi: torch.Tensor,
-        lidf: Optional[torch.Tensor] = None,
+        lidf: torch.Tensor | None = None,
     ) -> FourSAILResult:
         rho = self._ensure_2d(rho)
         tau = self._ensure_2d(tau)
@@ -274,7 +274,7 @@ class FourSAILModel:
 
         return outputs
 
-    def _ensure_2d(self, tensor: torch.Tensor, target_shape: Optional[Tuple[int, int]] = None) -> torch.Tensor:
+    def _ensure_2d(self, tensor: torch.Tensor, target_shape: tuple[int, int] | None = None) -> torch.Tensor:
         tensor = torch.as_tensor(tensor)
         if tensor.ndim == 1:
             tensor = tensor.unsqueeze(0)
@@ -325,7 +325,7 @@ class FourSAILModel:
 
     def _geometry_constants(
         self, tts: torch.Tensor, tto: torch.Tensor, psi: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         deg2rad = torch.pi / 180.0
         tts_rad = torch.deg2rad(tts)
         tto_rad = torch.deg2rad(tto)
@@ -345,7 +345,7 @@ class FourSAILModel:
         psi: torch.Tensor,
         lidf: torch.Tensor,
         litab: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         chi_s, chi_o, frho, ftau = self._volscatt_vectorized(tts, tto, psi, litab)
         cts = torch.cos(torch.deg2rad(tts)).unsqueeze(-1).clamp(min=1e-6)
         cto = torch.cos(torch.deg2rad(tto)).unsqueeze(-1).clamp(min=1e-6)
@@ -364,7 +364,7 @@ class FourSAILModel:
 
     def _volscatt(
         self, tts: torch.Tensor, tto: torch.Tensor, psi: torch.Tensor, ttl: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         deg2rad = torch.pi / 180.0
         tts_rad = torch.deg2rad(tts)
         tto_rad = torch.deg2rad(tto)
@@ -417,11 +417,11 @@ class FourSAILModel:
 
     def _volscatt_vectorized(
         self, tts: torch.Tensor, tto: torch.Tensor, psi: torch.Tensor, litab: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Vectorized volume scattering over all leaf inclination angles at once."""
         # tts, tto, psi: (batch,)  litab: (n_angles,)
         # Output shapes: (batch, n_angles)
-        tts_rad = torch.deg2rad(tts).unsqueeze(-1)   # (batch, 1)
+        tts_rad = torch.deg2rad(tts).unsqueeze(-1)  # (batch, 1)
         tto_rad = torch.deg2rad(tto).unsqueeze(-1)
         psi_rad = torch.deg2rad(psi).unsqueeze(-1)
         ttl_rad = torch.deg2rad(litab.to(device=tts.device, dtype=tts.dtype)).unsqueeze(0)  # (1, n_angles)
@@ -498,7 +498,7 @@ class FourSAILModel:
 
     def _hotspot_terms(
         self, hotspot: torch.Tensor, dso: torch.Tensor, ks: torch.Tensor, ko: torch.Tensor, lai: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         tsstoo = torch.exp(-ks * lai)
         sumint = (1.0 - tsstoo) / (ks * lai)
 
@@ -559,7 +559,9 @@ class FourSAILModel:
         rho: torch.Tensor,
         tau: torch.Tensor,
         soil: torch.Tensor,
-        geometry: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
+        geometry: tuple[
+            torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
+        ],
     ) -> FourSAILResult:
         batch, nwl = rho.shape
         device = rho.device
@@ -616,7 +618,9 @@ class FourSAILModel:
         rddt = rdd + tdd * soil * tdd / dn
         rsdt = rsd + (tsd + tss.unsqueeze(-1)) * soil * tdd / dn
         rdot = rdo + tdd * soil * (tdo + too.unsqueeze(-1)) / dn
-        rsodt = ((tss.unsqueeze(-1) + tsd) * tdo + (tsd + tss.unsqueeze(-1) * soil * rdd) * too.unsqueeze(-1)) * soil / dn
+        rsodt = (
+            ((tss.unsqueeze(-1) + tsd) * tdo + (tsd + tss.unsqueeze(-1) * soil * rdd) * too.unsqueeze(-1)) * soil / dn
+        )
         rsost = rso + tsstoo.unsqueeze(-1) * soil
         rsot = rsost + rsodt
         return FourSAILResult(

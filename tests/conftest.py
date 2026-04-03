@@ -5,10 +5,10 @@ from __future__ import annotations
 import pytest
 import torch
 
-
 # ---------------------------------------------------------------------------
 # Device / dtype parametrization helpers
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(params=[torch.float32, torch.float64], ids=["f32", "f64"])
 def dtype(request):
@@ -25,6 +25,7 @@ def device():
 # ---------------------------------------------------------------------------
 # Spectral grids
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def spectral_grids():
@@ -50,6 +51,7 @@ def full_spectral_grids():
 # ---------------------------------------------------------------------------
 # SCOPE upstream assets (skip if not available)
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def scope_root():
@@ -85,6 +87,7 @@ def full_spectral(fluspect_resources):
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def fluspect_model(fluspect_resources):
@@ -133,6 +136,7 @@ def reflectance_model(fluspect_resources, default_lidf):
 # Leaf bio defaults
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def default_leafbio():
     """Default leaf biochemistry inputs for testing."""
@@ -154,13 +158,18 @@ def default_leafbio():
 # Assertion helpers
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def assert_close():
     """Return a helper that wraps torch.testing.assert_close with defaults."""
 
     def _assert_close(actual, expected, *, rtol=1e-4, atol=1e-6, msg=""):
         torch.testing.assert_close(
-            actual, expected, rtol=rtol, atol=atol, msg=msg,
+            actual,
+            expected,
+            rtol=rtol,
+            atol=atol,
+            msg=msg,
         )
 
     return _assert_close

@@ -77,7 +77,9 @@ def test_zero_lai_transparent(model):
     tau = torch.full((batch, nwl), 0.05, dtype=dtype)
     soil = torch.full((batch, nwl), 0.3, dtype=dtype)
     transfer = model.build(
-        rho, tau, soil,
+        rho,
+        tau,
+        soil,
         lai=torch.tensor([0.001], dtype=dtype),
         tts=torch.tensor([30.0], dtype=dtype),
         tto=torch.tensor([0.0], dtype=dtype),

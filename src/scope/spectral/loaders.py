@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping
 
 import numpy as np
 import torch
@@ -113,7 +113,9 @@ def load_fluspect_resources(
 
     device_obj = torch.device(device) if device is not None else torch.device("cpu")
     wavelength = _to_tensor_1d(raw["wl"], device=device_obj, dtype=dtype)
-    spectral = SpectralGrids(wlP=wavelength, wlF=_maybe_tensor_1d(wlF, device_obj, dtype), wlE=_maybe_tensor_1d(wlE, device_obj, dtype))
+    spectral = SpectralGrids(
+        wlP=wavelength, wlF=_maybe_tensor_1d(wlF, device_obj, dtype), wlE=_maybe_tensor_1d(wlE, device_obj, dtype)
+    )
     optipar = OptiPar(
         nr=_to_tensor_1d(raw["nr"], device=device_obj, dtype=dtype),
         Kab=_to_tensor_1d(raw["Kab"], device=device_obj, dtype=dtype),

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Optional
 
 import torch
 
@@ -44,7 +43,7 @@ class LeafBiochemistryInputs:
     Knalpha: torch.Tensor | float = 2.83
     Knbeta: torch.Tensor | float = 0.114
     stressfactor: torch.Tensor | float = 1.0
-    g_m: Optional[torch.Tensor | float] = None
+    g_m: torch.Tensor | float | None = None
     TDP: BiochemicalTemperatureResponse = field(default_factory=BiochemicalTemperatureResponse)
 
 
@@ -108,7 +107,7 @@ class LeafBiochemistryModel:
     def __init__(
         self,
         *,
-        device: Optional[torch.device | str] = None,
+        device: torch.device | str | None = None,
         dtype: torch.dtype = torch.float32,
     ) -> None:
         self.device = torch.device(device) if device is not None else torch.device("cpu")
@@ -129,7 +128,7 @@ class LeafBiochemistryModel:
         leafbio: LeafBiochemistryInputs,
         meteo: LeafMeteo,
         *,
-        options: Optional[BiochemicalOptions] = None,
+        options: BiochemicalOptions | None = None,
         fV: torch.Tensor | float = 1.0,
     ) -> LeafBiochemistryResult:
         opts = options or BiochemicalOptions()
@@ -205,8 +204,12 @@ class LeafBiochemistryModel:
                 Rd = (Rd25 * q10_term) / fHTv_rd
                 Ke = (20000.0 * Vcmax25) * q10_term
             else:
-                f_vcmax = self._temperature_function_c3(T, temp.delHaV) * self._high_temp_inhibition_c3(T, temp.delSV, temp.delHdV)
-                f_rd = self._temperature_function_c3(T, temp.delHaR) * self._high_temp_inhibition_c3(T, temp.delSR, temp.delHdR)
+                f_vcmax = self._temperature_function_c3(T, temp.delHaV) * self._high_temp_inhibition_c3(
+                    T, temp.delSV, temp.delHdV
+                )
+                f_rd = self._temperature_function_c3(T, temp.delHaR) * self._high_temp_inhibition_c3(
+                    T, temp.delSR, temp.delHdR
+                )
                 f_kc = self._temperature_function_c3(T, temp.delHaKc)
                 f_ko = self._temperature_function_c3(T, temp.delHaKo)
                 f_gamma = self._temperature_function_c3(T, temp.delHaT)
@@ -904,7 +907,7 @@ class LeafBiochemistryModel:
         self,
         Cs: torch.Tensor,
         RH: torch.Tensor,
-        A: Optional[torch.Tensor],
+        A: torch.Tensor | None,
         BallBerrySlope: torch.Tensor,
         BallBerry0: torch.Tensor,
         min_ci: float,

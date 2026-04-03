@@ -1,16 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 import torch
 
-from ..biochem import BiochemicalOptions, LeafBiochemistryInputs, LeafBiochemistryModel, LeafBiochemistryResult, LeafMeteo
+from ..biochem import (
+    BiochemicalOptions,
+    LeafBiochemistryInputs,
+    LeafBiochemistryModel,
+    LeafBiochemistryResult,
+    LeafMeteo,
+)
+from ..spectral.fluspect import FluspectModel, LeafBioBatch, SpectralGrids
+from ..spectral.soil import SoilEmpiricalParams
 from .foursail import FourSAILModel
 from .layered_rt import LayeredCanopyTransfer, LayeredCanopyTransportModel
 from .reflectance import CanopyReflectanceModel
-from ..spectral.fluspect import FluspectModel, LeafBioBatch, SpectralGrids
-from ..spectral.soil import SoilEmpiricalParams
 
 
 @dataclass(slots=True)
@@ -119,18 +124,18 @@ class CanopyFluorescenceModel:
         cls,
         *,
         lidf: torch.Tensor,
-        sail: Optional[FourSAILModel] = None,
-        path: Optional[str] = None,
-        soil_path: Optional[str] = None,
-        scope_root_path: Optional[str] = None,
-        device: Optional[torch.device | str] = None,
+        sail: FourSAILModel | None = None,
+        path: str | None = None,
+        soil_path: str | None = None,
+        scope_root_path: str | None = None,
+        device: torch.device | str | None = None,
         dtype: torch.dtype = torch.float32,
         ndub: int = 15,
         doublings_step: int = 5,
         default_hotspot: float = 0.2,
         soil_index_base: int = 1,
         soil_empirical: SoilEmpiricalParams | None = None,
-    ) -> "CanopyFluorescenceModel":
+    ) -> CanopyFluorescenceModel:
         reflectance = CanopyReflectanceModel.from_scope_assets(
             lidf=lidf,
             sail=sail,
@@ -157,8 +162,8 @@ class CanopyFluorescenceModel:
         psi: torch.Tensor,
         excitation: torch.Tensor,
         *,
-        hotspot: Optional[torch.Tensor] = None,
-        lidf: Optional[torch.Tensor] = None,
+        hotspot: torch.Tensor | None = None,
+        lidf: torch.Tensor | None = None,
     ) -> CanopyFluorescenceResult:
         return self.one_pass(
             leafbio,
@@ -182,8 +187,8 @@ class CanopyFluorescenceModel:
         psi: torch.Tensor,
         excitation: torch.Tensor,
         *,
-        hotspot: Optional[torch.Tensor] = None,
-        lidf: Optional[torch.Tensor] = None,
+        hotspot: torch.Tensor | None = None,
+        lidf: torch.Tensor | None = None,
     ) -> CanopyFluorescenceResult:
         fluspect = self.reflectance_model.fluspect
         sail_model = self.reflectance_model.sail
@@ -192,7 +197,11 @@ class CanopyFluorescenceModel:
         if leafopt.Mb is None or leafopt.Mf is None:
             raise ValueError("Leaf fluorescence matrices are unavailable. Provide leafbio with fqe > 0.")
 
-        hotspot_value = hotspot if hotspot is not None else torch.full_like(torch.as_tensor(lai), self.reflectance_model.default_hotspot)
+        hotspot_value = (
+            hotspot
+            if hotspot is not None
+            else torch.full_like(torch.as_tensor(lai), self.reflectance_model.default_hotspot)
+        )
         sail = sail_model(
             leafopt.refl,
             leafopt.tran,
@@ -215,7 +224,9 @@ class CanopyFluorescenceModel:
         leaf_fluor_back = torch.einsum("bfe,be->bf", leafopt.Mb, excitation_tensor)
         leaf_fluor_forw = torch.einsum("bfe,be->bf", leafopt.Mf, excitation_tensor)
 
-        lai_tensor = self._expand_batch(lai, leaf_fluor_back.shape[0], device=leaf_fluor_back.device, dtype=leaf_fluor_back.dtype)
+        lai_tensor = self._expand_batch(
+            lai, leaf_fluor_back.shape[0], device=leaf_fluor_back.device, dtype=leaf_fluor_back.dtype
+        )
         Femleaves_ = lai_tensor.unsqueeze(-1) * (leaf_fluor_back + leaf_fluor_forw)
         EoutFrc_ = self._simple_reabsorption_corrected_source(
             leafopt=leafopt,
@@ -286,13 +297,13 @@ class CanopyFluorescenceModel:
         Esun_: torch.Tensor,
         Esky_: torch.Tensor,
         *,
-        etau: Optional[torch.Tensor] = None,
-        etah: Optional[torch.Tensor] = None,
-        Pnu_Cab: Optional[torch.Tensor] = None,
-        Pnh_Cab: Optional[torch.Tensor] = None,
-        hotspot: Optional[torch.Tensor] = None,
-        lidf: Optional[torch.Tensor] = None,
-        nlayers: Optional[int] = None,
+        etau: torch.Tensor | None = None,
+        etah: torch.Tensor | None = None,
+        Pnu_Cab: torch.Tensor | None = None,
+        Pnh_Cab: torch.Tensor | None = None,
+        hotspot: torch.Tensor | None = None,
+        lidf: torch.Tensor | None = None,
+        nlayers: int | None = None,
     ) -> CanopyFluorescenceResult:
         fluspect = self.reflectance_model.fluspect
         leafopt = self._rtmf_fluspect(leafbio)
@@ -429,11 +440,11 @@ class CanopyFluorescenceModel:
         Esun_: torch.Tensor,
         Esky_: torch.Tensor,
         *,
-        etau: Optional[torch.Tensor] = None,
-        etah: Optional[torch.Tensor] = None,
-        hotspot: Optional[torch.Tensor] = None,
-        lidf: Optional[torch.Tensor] = None,
-        nlayers: Optional[int] = None,
+        etau: torch.Tensor | None = None,
+        etah: torch.Tensor | None = None,
+        hotspot: torch.Tensor | None = None,
+        lidf: torch.Tensor | None = None,
+        nlayers: int | None = None,
     ) -> CanopyFluorescenceProfileResult:
         result = self.layered(
             leafbio,
@@ -456,7 +467,11 @@ class CanopyFluorescenceModel:
         if wlF is None:
             raise ValueError("Spectral grids must define fluorescence wavelengths")
         nl = self._resolve_nlayers(nlayers, etau=etau, etah=etah)
-        hotspot_value = hotspot if hotspot is not None else torch.full_like(torch.as_tensor(lai), self.reflectance_model.default_hotspot)
+        hotspot_value = (
+            hotspot
+            if hotspot is not None
+            else torch.full_like(torch.as_tensor(lai), self.reflectance_model.default_hotspot)
+        )
         rho_f = self._sample_spectrum(leafopt.refl, wlP, wlF)
         tau_f = self._sample_spectrum(leafopt.tran, wlP, wlF)
         soil_f = self._sample_spectrum(soil_refl, wlP, wlF)
@@ -492,11 +507,11 @@ class CanopyFluorescenceModel:
         Esun_: torch.Tensor,
         Esky_: torch.Tensor,
         *,
-        etau: Optional[torch.Tensor] = None,
-        etah: Optional[torch.Tensor] = None,
-        hotspot: Optional[torch.Tensor] = None,
-        lidf: Optional[torch.Tensor] = None,
-        nlayers: Optional[int] = None,
+        etau: torch.Tensor | None = None,
+        etah: torch.Tensor | None = None,
+        hotspot: torch.Tensor | None = None,
+        lidf: torch.Tensor | None = None,
+        nlayers: int | None = None,
     ) -> CanopyDirectionalFluorescenceResult:
         device = self.reflectance_model.fluspect.device
         dtype = self.reflectance_model.fluspect.dtype
@@ -509,7 +524,9 @@ class CanopyFluorescenceModel:
         batch = soil.shape[0]
         lai_tensor = self.reflectance_model.sail._expand_param(lai, batch, device, dtype)
         tts_tensor = self.reflectance_model.sail._expand_param(tts, batch, device, dtype)
-        hotspot_value = hotspot if hotspot is not None else torch.full_like(lai_tensor, self.reflectance_model.default_hotspot)
+        hotspot_value = (
+            hotspot if hotspot is not None else torch.full_like(lai_tensor, self.reflectance_model.default_hotspot)
+        )
 
         directional_lof = []
         for idx in range(tto_angles.numel()):
@@ -548,19 +565,23 @@ class CanopyFluorescenceModel:
         psi: torch.Tensor,
         Esun_: torch.Tensor,
         Esky_: torch.Tensor,
-        hotspot: Optional[torch.Tensor],
-        lidf: Optional[torch.Tensor],
+        hotspot: torch.Tensor | None,
+        lidf: torch.Tensor | None,
         nlayers: int,
         wlP: torch.Tensor,
         wlE: torch.Tensor,
         wlF: torch.Tensor,
-        etau: Optional[torch.Tensor],
-        etah: Optional[torch.Tensor],
+        etau: torch.Tensor | None,
+        etah: torch.Tensor | None,
     ) -> _LayeredFluorescenceDiagnostics:
         nl = nlayers
-        hotspot_value = hotspot if hotspot is not None else torch.full_like(
-            torch.as_tensor(lai),
-            self.reflectance_model.default_hotspot,
+        hotspot_value = (
+            hotspot
+            if hotspot is not None
+            else torch.full_like(
+                torch.as_tensor(lai),
+                self.reflectance_model.default_hotspot,
+            )
         )
 
         rho_e = self._sample_spectrum(leafopt.refl, wlP, wlE)
@@ -670,7 +691,11 @@ class CanopyFluorescenceModel:
         for layer in range(nl - 1, -1, -1):
             denom = (1.0 - transport_f.rho_dd[:, layer, :] * transport_f.R_dd[:, layer + 1, :]).clamp(min=1e-9)
             Y[:, layer, :] = (transport_f.rho_dd[:, layer, :] * U[:, layer + 1, :] + Femmin[:, layer, :]) / denom
-            U[:, layer, :] = transport_f.tau_dd[:, layer, :] * (transport_f.R_dd[:, layer + 1, :] * Y[:, layer, :] + U[:, layer + 1, :]) + Femplu[:, layer, :]
+            U[:, layer, :] = (
+                transport_f.tau_dd[:, layer, :]
+                * (transport_f.R_dd[:, layer + 1, :] * Y[:, layer, :] + U[:, layer + 1, :])
+                + Femplu[:, layer, :]
+            )
         for layer in range(nl):
             Fmin[:, layer + 1, :] = transport_f.Xdd[:, layer, :] * Fmin[:, layer, :] + Y[:, layer, :]
             Fplu[:, layer, :] = transport_f.R_dd[:, layer, :] * Fmin[:, layer, :] + U[:, layer, :]
@@ -744,10 +769,10 @@ class CanopyFluorescenceModel:
         Oa: torch.Tensor,
         p: torch.Tensor,
         fV: torch.Tensor | float = 1.0,
-        biochem_options: Optional[BiochemicalOptions] = None,
-        hotspot: Optional[torch.Tensor] = None,
-        lidf: Optional[torch.Tensor] = None,
-        nlayers: Optional[int] = None,
+        biochem_options: BiochemicalOptions | None = None,
+        hotspot: torch.Tensor | None = None,
+        lidf: torch.Tensor | None = None,
+        nlayers: int | None = None,
     ) -> CanopyBiochemicalFluorescenceResult:
         fluspect = self.reflectance_model.fluspect
         leafopt = fluspect(leafbio)
@@ -759,7 +784,11 @@ class CanopyFluorescenceModel:
         if wlE is None:
             raise ValueError("Spectral grids must define excitation wavelengths")
 
-        hotspot_value = hotspot if hotspot is not None else torch.full_like(torch.as_tensor(lai), self.reflectance_model.default_hotspot)
+        hotspot_value = (
+            hotspot
+            if hotspot is not None
+            else torch.full_like(torch.as_tensor(lai), self.reflectance_model.default_hotspot)
+        )
         nl = self._resolve_nlayers(nlayers, etau=Tcu, etah=Tch)
         rho_e = self._sample_spectrum(leafopt.refl, wlP, wlE)
         tau_e = self._sample_spectrum(leafopt.tran, wlP, wlE)
@@ -836,7 +865,9 @@ class CanopyFluorescenceModel:
         )
 
     def _prepare_spectrum(self, value: torch.Tensor, batch: int, n_wavelength: int) -> torch.Tensor:
-        tensor = torch.as_tensor(value, device=self.reflectance_model.fluspect.device, dtype=self.reflectance_model.fluspect.dtype)
+        tensor = torch.as_tensor(
+            value, device=self.reflectance_model.fluspect.device, dtype=self.reflectance_model.fluspect.dtype
+        )
         if tensor.ndim == 1:
             tensor = tensor.unsqueeze(0)
         if tensor.ndim != 2:
@@ -849,7 +880,7 @@ class CanopyFluorescenceModel:
             raise ValueError("Spectra must broadcast to the batch dimension")
         return tensor
 
-    def _resolve_nlayers(self, nlayers: Optional[int], *, etau: Optional[torch.Tensor], etah: Optional[torch.Tensor]) -> int:
+    def _resolve_nlayers(self, nlayers: int | None, *, etau: torch.Tensor | None, etah: torch.Tensor | None) -> int:
         for value in (etau, etah):
             if value is None:
                 continue
@@ -858,7 +889,9 @@ class CanopyFluorescenceModel:
                 return int(tensor.shape[1])
         return int(nlayers) if nlayers is not None else 60
 
-    def _expand_batch(self, value: torch.Tensor | float, batch: int, *, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    def _expand_batch(
+        self, value: torch.Tensor | float, batch: int, *, device: torch.device, dtype: torch.dtype
+    ) -> torch.Tensor:
         tensor = torch.as_tensor(value, device=device, dtype=dtype)
         if tensor.ndim == 0:
             tensor = tensor.repeat(batch)
@@ -869,9 +902,15 @@ class CanopyFluorescenceModel:
         return tensor
 
     def _interp1d(self, source_x: torch.Tensor, source_y: torch.Tensor, target_x: torch.Tensor) -> torch.Tensor:
-        source_x = source_x.to(self.reflectance_model.fluspect.device, self.reflectance_model.fluspect.dtype).contiguous()
-        source_y = source_y.to(self.reflectance_model.fluspect.device, self.reflectance_model.fluspect.dtype).contiguous()
-        target_x = target_x.to(self.reflectance_model.fluspect.device, self.reflectance_model.fluspect.dtype).contiguous()
+        source_x = source_x.to(
+            self.reflectance_model.fluspect.device, self.reflectance_model.fluspect.dtype
+        ).contiguous()
+        source_y = source_y.to(
+            self.reflectance_model.fluspect.device, self.reflectance_model.fluspect.dtype
+        ).contiguous()
+        target_x = target_x.to(
+            self.reflectance_model.fluspect.device, self.reflectance_model.fluspect.dtype
+        ).contiguous()
         idx = torch.bucketize(target_x, source_x) - 1
         idx = idx.clamp(0, source_x.numel() - 2)
         x0 = source_x[idx]
@@ -883,7 +922,11 @@ class CanopyFluorescenceModel:
         return y0 + (y1 - y0) * frac
 
     def _sample_spectrum(self, spectrum: torch.Tensor, source_x: torch.Tensor, target_x: torch.Tensor) -> torch.Tensor:
-        if spectrum.shape[-1] == target_x.numel() and source_x.numel() == target_x.numel() and torch.allclose(source_x, target_x):
+        if (
+            spectrum.shape[-1] == target_x.numel()
+            and source_x.numel() == target_x.numel()
+            and torch.allclose(source_x, target_x)
+        ):
             return spectrum
         return self._interp1d(source_x, spectrum, target_x)
 
@@ -897,12 +940,16 @@ class CanopyFluorescenceModel:
     def _e2phot(self, wavelength_nm: torch.Tensor, energy: torch.Tensor) -> torch.Tensor:
         return energy / self._ephoton(wavelength_nm).view(*([1] * (energy.ndim - 1)), -1)
 
-    def _matrix_energy_product(self, matrix: torch.Tensor, excitation: torch.Tensor, wlE: torch.Tensor, wlF: torch.Tensor) -> torch.Tensor:
+    def _matrix_energy_product(
+        self, matrix: torch.Tensor, excitation: torch.Tensor, wlE: torch.Tensor, wlF: torch.Tensor
+    ) -> torch.Tensor:
         photons = self._e2phot(wlE, excitation)
         emitted = torch.einsum("bfe,be->bf", matrix, photons)
         return self._ephoton(wlF).unsqueeze(0) * emitted
 
-    def _matrix_energy_product_layered(self, matrix: torch.Tensor, excitation: torch.Tensor, wlE: torch.Tensor, wlF: torch.Tensor) -> torch.Tensor:
+    def _matrix_energy_product_layered(
+        self, matrix: torch.Tensor, excitation: torch.Tensor, wlE: torch.Tensor, wlF: torch.Tensor
+    ) -> torch.Tensor:
         photons = self._e2phot(wlE, excitation)
         emitted = torch.einsum("bfe,ble->blf", matrix, photons)
         return self._ephoton(wlF).view(1, 1, -1) * emitted
@@ -1010,19 +1057,23 @@ class CanopyFluorescenceModel:
         psi: torch.Tensor,
         Esun: torch.Tensor,
         Esky: torch.Tensor,
-        hotspot: Optional[torch.Tensor],
-        lidf: Optional[torch.Tensor],
+        hotspot: torch.Tensor | None,
+        lidf: torch.Tensor | None,
         nlayers: int,
-        etau: Optional[torch.Tensor],
-        etah: Optional[torch.Tensor],
-        Pnu_Cab: Optional[torch.Tensor],
-        Pnh_Cab: Optional[torch.Tensor],
+        etau: torch.Tensor | None,
+        etah: torch.Tensor | None,
+        Pnu_Cab: torch.Tensor | None,
+        Pnh_Cab: torch.Tensor | None,
         wlP: torch.Tensor,
         wlE: torch.Tensor,
     ) -> torch.Tensor:
-        hotspot_value = hotspot if hotspot is not None else torch.full_like(
-            torch.as_tensor(lai),
-            self.reflectance_model.default_hotspot,
+        hotspot_value = (
+            hotspot
+            if hotspot is not None
+            else torch.full_like(
+                torch.as_tensor(lai),
+                self.reflectance_model.default_hotspot,
+            )
         )
         rho_e = self._sample_spectrum(leafopt.refl, wlP, wlE)
         tau_e = self._sample_spectrum(leafopt.tran, wlP, wlE)
@@ -1102,19 +1153,29 @@ class CanopyFluorescenceModel:
 
         return fqe * transport.iLAI * torch.sum(Ps * sunlit_term + (1.0 - Ps) * shaded_term, dim=-1)
 
-    def _source_spectrum_from_poutfrc(self, poutfrc: torch.Tensor, *, wlP: torch.Tensor, wlF: torch.Tensor) -> torch.Tensor:
+    def _source_spectrum_from_poutfrc(
+        self, poutfrc: torch.Tensor, *, wlP: torch.Tensor, wlF: torch.Tensor
+    ) -> torch.Tensor:
         batch = poutfrc.shape[0]
         phi = self.reflectance_model.fluspect.optipar.phi.unsqueeze(0).expand(batch, -1)
         phi_em = self._sample_spectrum(phi, wlP, wlF)
         ep = self._ephoton(wlF).unsqueeze(0)
         return 1e-3 * ep * poutfrc.unsqueeze(-1) * phi_em
 
-    def _matlab_spline_interp1(self, source_x: torch.Tensor, source_y: torch.Tensor, target_x: torch.Tensor) -> torch.Tensor:
+    def _matlab_spline_interp1(
+        self, source_x: torch.Tensor, source_y: torch.Tensor, target_x: torch.Tensor
+    ) -> torch.Tensor:
         if source_x.numel() == target_x.numel() and torch.allclose(source_x, target_x):
             return source_y
-        source_x = source_x.to(self.reflectance_model.fluspect.device, self.reflectance_model.fluspect.dtype).contiguous()
-        source_y = source_y.to(self.reflectance_model.fluspect.device, self.reflectance_model.fluspect.dtype).contiguous()
-        target_x = target_x.to(self.reflectance_model.fluspect.device, self.reflectance_model.fluspect.dtype).contiguous()
+        source_x = source_x.to(
+            self.reflectance_model.fluspect.device, self.reflectance_model.fluspect.dtype
+        ).contiguous()
+        source_y = source_y.to(
+            self.reflectance_model.fluspect.device, self.reflectance_model.fluspect.dtype
+        ).contiguous()
+        target_x = target_x.to(
+            self.reflectance_model.fluspect.device, self.reflectance_model.fluspect.dtype
+        ).contiguous()
         if source_x.numel() < 4:
             return self._interp1d(source_x, source_y, target_x)
 
@@ -1202,7 +1263,7 @@ class CanopyFluorescenceModel:
         Oa: torch.Tensor,
         p: torch.Tensor,
         fV: torch.Tensor,
-        options: Optional[BiochemicalOptions],
+        options: BiochemicalOptions | None,
         target_shape: torch.Size,
     ) -> LeafBiochemistryResult:
         flat_inputs = self._flatten_biochemistry_inputs(biochemistry, target_shape)
@@ -1303,7 +1364,7 @@ class CanopyFluorescenceModel:
                 data[field] = value
         return LeafBiochemistryResult(**data)
 
-    def _prepare_etau(self, etau: Optional[torch.Tensor], transfer: LayeredCanopyTransfer) -> torch.Tensor:
+    def _prepare_etau(self, etau: torch.Tensor | None, transfer: LayeredCanopyTransfer) -> torch.Tensor:
         batch = transfer.Ps.shape[0]
         nl = transfer.nlayers
         ninc = transfer.litab.numel()
@@ -1340,7 +1401,7 @@ class CanopyFluorescenceModel:
                 return tensor.reshape(batch, nl, nori)
         raise ValueError(f"etau must broadcast to shape ({batch}, {nl}, {nori}), got {tuple(tensor.shape)}")
 
-    def _prepare_etah(self, etah: Optional[torch.Tensor], transfer: LayeredCanopyTransfer) -> torch.Tensor:
+    def _prepare_etah(self, etah: torch.Tensor | None, transfer: LayeredCanopyTransfer) -> torch.Tensor:
         batch = transfer.Ps.shape[0]
         nl = transfer.nlayers
         ninc = transfer.litab.numel()

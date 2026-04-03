@@ -60,7 +60,16 @@ def test_scope_benchmark_locked_subsystems(tmp_path):
         assert iteration_inputs[name]["max_rel"] < 1e-3
 
     leaf_iteration = report["leaf_iteration"]
-    for name in ("sunlit_A", "shaded_A", "sunlit_Ci", "shaded_Ci", "sunlit_rcw", "shaded_rcw", "sunlit_eta", "shaded_eta"):
+    for name in (
+        "sunlit_A",
+        "shaded_A",
+        "sunlit_Ci",
+        "shaded_Ci",
+        "sunlit_rcw",
+        "shaded_rcw",
+        "sunlit_eta",
+        "shaded_eta",
+    ):
         assert leaf_iteration[name]["max_rel"] < 1e-9
 
     thermal_transport = report["thermal_transport"]
@@ -90,5 +99,22 @@ def test_scope_benchmark_locked_subsystems(tmp_path):
 
     assert energy["L"]["max_abs"] < 1e-1
     assert energy["counter"]["max_abs"] == 0.0
-    for name in ("Rnctot", "lEctot", "Hctot", "Actot", "Tcave", "Rnstot", "lEstot", "Hstot", "Gtot", "Tsave", "Rntot", "lEtot", "Htot", "raa", "raws", "ustar"):
+    for name in (
+        "Rnctot",
+        "lEctot",
+        "Hctot",
+        "Actot",
+        "Tcave",
+        "Rnstot",
+        "lEstot",
+        "Hstot",
+        "Gtot",
+        "Tsave",
+        "Rntot",
+        "lEtot",
+        "Htot",
+        "raa",
+        "raws",
+        "ustar",
+    ):
         assert energy[name]["max_rel"] < 5e-3

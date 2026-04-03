@@ -237,7 +237,15 @@ def _psih(z: torch.Tensor, L: torch.Tensor, unst: torch.Tensor, st: torch.Tensor
     return out
 
 
-def _phstar(z: torch.Tensor, zR: torch.Tensor, d: torch.Tensor, L: torch.Tensor, st: torch.Tensor, unst: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+def _phstar(
+    z: torch.Tensor,
+    zR: torch.Tensor,
+    d: torch.Tensor,
+    L: torch.Tensor,
+    st: torch.Tensor,
+    unst: torch.Tensor,
+    x: torch.Tensor,
+) -> torch.Tensor:
     out = torch.zeros_like(z)
     out = torch.where(unst, (z - d) / (zR - d) * (x**2 - 1.0) / (x**2 + 1.0), out)
     out = torch.where(st, -5.0 * z / L, out)

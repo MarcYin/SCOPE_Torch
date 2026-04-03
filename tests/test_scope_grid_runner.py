@@ -5,9 +5,12 @@ import torch
 import xarray as xr
 
 from scope.biochem import LeafBiochemistryInputs, LeafBiochemistryResult
-from scope.canopy.foursail import FourSAILModel, campbell_lidf
 from scope.canopy.fluorescence import CanopyFluorescenceModel, CanopyFluorescenceResult
+from scope.canopy.foursail import FourSAILModel, campbell_lidf
 from scope.canopy.reflectance import CanopyReflectanceModel
+from scope.canopy.thermal import CanopyThermalRadianceModel, CanopyThermalRadianceResult, default_thermal_wavelengths
+from scope.config import SimulationConfig
+from scope.data import ScopeGridDataModule
 from scope.energy import (
     CanopyEnergyBalanceResult,
     EnergyBalanceCanopy,
@@ -15,13 +18,9 @@ from scope.energy import (
     EnergyBalanceOptions,
     EnergyBalanceSoil,
 )
-from scope.canopy.thermal import CanopyThermalRadianceModel, CanopyThermalRadianceResult, default_thermal_wavelengths
-from scope.config import SimulationConfig
-from scope.data import ScopeGridDataModule
 from scope.runners.grid import ScopeGridRunner
 from scope.spectral.fluspect import FluspectModel, LeafBioBatch, OptiPar, SpectralGrids
 from scope.spectral.loaders import load_soil_spectra
-
 
 CANOPY_KEYS = [
     "rdd",
@@ -72,7 +71,9 @@ def _optipar(spectral):
     )
 
 
-def _build_execution_mode_runner(*, device: torch.device | str = "cpu", dtype: torch.dtype = torch.float64) -> tuple[ScopeGridRunner, SpectralGrids]:
+def _build_execution_mode_runner(
+    *, device: torch.device | str = "cpu", dtype: torch.dtype = torch.float64
+) -> tuple[ScopeGridRunner, SpectralGrids]:
     device = torch.device(device)
     spectral = _spectral(device, dtype)
     optipar = _optipar(spectral)
@@ -336,7 +337,9 @@ def test_scope_grid_runner_matches_manual():
         coords={"y": y, "x": x, "time": times, "wavelength": np.arange(nwl)},
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2
+    )
     module = ScopeGridDataModule(data, cfg, required_vars=["Cab", "Cw", "Cdm", "LAI", "tts", "tto", "psi", "soil_refl"])
     runner = ScopeGridRunner(fluspect, sail, lidf=lidf)
     outputs = runner.run(
@@ -355,7 +358,11 @@ def test_scope_grid_runner_matches_manual():
 
     stacked = data.stack(batch=("y", "x", "time"))
     reflectance_model = CanopyReflectanceModel(fluspect, sail, lidf=lidf, default_hotspot=runner.default_hotspot)
-    manual_outputs: dict[str, list[torch.Tensor]] = {"leaf_refl": [], "leaf_tran": [], **{key: [] for key in CANOPY_KEYS}}
+    manual_outputs: dict[str, list[torch.Tensor]] = {
+        "leaf_refl": [],
+        "leaf_tran": [],
+        **{key: [] for key in CANOPY_KEYS},
+    }
     for label in stacked["Cab"].indexes["batch"]:
         idx = dict(batch=label)
         leafbio = LeafBioBatch(
@@ -411,7 +418,9 @@ def test_scope_grid_runner_run_dataset_preserves_xarray_metadata():
         attrs={"site": "demo"},
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=1)
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=1
+    )
     module = ScopeGridDataModule(data, cfg, required_vars=["Cab", "Cw", "Cdm", "LAI", "tts", "tto", "psi", "soil_refl"])
     runner = ScopeGridRunner(fluspect, sail, lidf=lidf)
 
@@ -486,17 +495,39 @@ def test_scope_grid_runner_directional_reflectance_dataset_preserves_direction_c
         },
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
-    module = ScopeGridDataModule(data, cfg, required_vars=["Cab", "Cw", "Cdm", "LAI", "tts", "soil_refl", "Esun_", "Esky_"])
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2
+    )
+    module = ScopeGridDataModule(
+        data, cfg, required_vars=["Cab", "Cw", "Cdm", "LAI", "tts", "soil_refl", "Esun_", "Esky_"]
+    )
     runner = ScopeGridRunner(fluspect, sail, lidf=lidf)
 
     flat_outputs = runner.run_directional_reflectance(
         module,
-        varmap={"Cab": "Cab", "Cw": "Cw", "Cdm": "Cdm", "LAI": "LAI", "tts": "tts", "soil_refl": "soil_refl", "Esun_": "Esun_", "Esky_": "Esky_"},
+        varmap={
+            "Cab": "Cab",
+            "Cw": "Cw",
+            "Cdm": "Cdm",
+            "LAI": "LAI",
+            "tts": "tts",
+            "soil_refl": "soil_refl",
+            "Esun_": "Esun_",
+            "Esky_": "Esky_",
+        },
     )
     dataset_outputs = runner.run_directional_reflectance_dataset(
         module,
-        varmap={"Cab": "Cab", "Cw": "Cw", "Cdm": "Cdm", "LAI": "LAI", "tts": "tts", "soil_refl": "soil_refl", "Esun_": "Esun_", "Esky_": "Esky_"},
+        varmap={
+            "Cab": "Cab",
+            "Cw": "Cw",
+            "Cdm": "Cdm",
+            "LAI": "LAI",
+            "tts": "tts",
+            "soil_refl": "soil_refl",
+            "Esun_": "Esun_",
+            "Esky_": "Esky_",
+        },
     )
 
     assert dataset_outputs.attrs["scope_product"] == "directional_reflectance"
@@ -538,18 +569,44 @@ def test_scope_grid_runner_reflectance_profiles_dataset_preserves_layer_interfac
         coords={"y": y, "x": x, "time": times, "wavelength": np.arange(nwl)},
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
-    module = ScopeGridDataModule(data, cfg, required_vars=["Cab", "Cw", "Cdm", "LAI", "tts", "tto", "psi", "soil_refl", "Esun_", "Esky_"])
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2
+    )
+    module = ScopeGridDataModule(
+        data, cfg, required_vars=["Cab", "Cw", "Cdm", "LAI", "tts", "tto", "psi", "soil_refl", "Esun_", "Esky_"]
+    )
     runner = ScopeGridRunner(fluspect, sail, lidf=lidf)
 
     flat_outputs = runner.run_reflectance_profiles(
         module,
-        varmap={"Cab": "Cab", "Cw": "Cw", "Cdm": "Cdm", "LAI": "LAI", "tts": "tts", "tto": "tto", "psi": "psi", "soil_refl": "soil_refl", "Esun_": "Esun_", "Esky_": "Esky_"},
+        varmap={
+            "Cab": "Cab",
+            "Cw": "Cw",
+            "Cdm": "Cdm",
+            "LAI": "LAI",
+            "tts": "tts",
+            "tto": "tto",
+            "psi": "psi",
+            "soil_refl": "soil_refl",
+            "Esun_": "Esun_",
+            "Esky_": "Esky_",
+        },
         nlayers=3,
     )
     dataset_outputs = runner.run_reflectance_profiles_dataset(
         module,
-        varmap={"Cab": "Cab", "Cw": "Cw", "Cdm": "Cdm", "LAI": "LAI", "tts": "tts", "tto": "tto", "psi": "psi", "soil_refl": "soil_refl", "Esun_": "Esun_", "Esky_": "Esky_"},
+        varmap={
+            "Cab": "Cab",
+            "Cw": "Cw",
+            "Cdm": "Cdm",
+            "LAI": "LAI",
+            "tts": "tts",
+            "tto": "tto",
+            "psi": "psi",
+            "soil_refl": "soil_refl",
+            "Esun_": "Esun_",
+            "Esky_": "Esky_",
+        },
         nlayers=3,
     )
 
@@ -591,7 +648,9 @@ def test_scope_grid_runner_reflectance_respects_explicit_nlayers():
         coords={"y": y, "x": x, "time": times, "wavelength": np.arange(nwl)},
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2
+    )
     module = ScopeGridDataModule(data, cfg, required_vars=["Cab", "Cw", "Cdm", "LAI", "tts", "tto", "psi", "soil_refl"])
     runner = ScopeGridRunner(fluspect, sail, lidf=lidf)
     outputs = runner.run(
@@ -611,7 +670,11 @@ def test_scope_grid_runner_reflectance_respects_explicit_nlayers():
 
     stacked = data.stack(batch=("y", "x", "time"))
     reflectance_model = CanopyReflectanceModel(fluspect, sail, lidf=lidf, default_hotspot=runner.default_hotspot)
-    manual_outputs: dict[str, list[torch.Tensor]] = {"leaf_refl": [], "leaf_tran": [], **{key: [] for key in CANOPY_KEYS}}
+    manual_outputs: dict[str, list[torch.Tensor]] = {
+        "leaf_refl": [],
+        "leaf_tran": [],
+        **{key: [] for key in CANOPY_KEYS},
+    }
     for label in stacked["Cab"].indexes["batch"]:
         idx = dict(batch=label)
         leafbio = LeafBioBatch(
@@ -683,7 +746,9 @@ def test_scope_grid_runner_energy_balance_thermal_matches_manual():
         coords={"y": y, "x": x, "time": times, "wavelength": np.arange(spectral.wlP.numel())},
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2
+    )
     module = ScopeGridDataModule(
         data,
         cfg,
@@ -753,7 +818,9 @@ def test_scope_grid_runner_energy_balance_thermal_matches_manual():
     )
 
     physiology_fields = [name for name in LeafBiochemistryResult.__dataclass_fields__ if name != "fcount"]
-    energy_fields = [name for name in CanopyEnergyBalanceResult.__dataclass_fields__ if name not in {"sunlit", "shaded", "Tsold"}]
+    energy_fields = [
+        name for name in CanopyEnergyBalanceResult.__dataclass_fields__ if name not in {"sunlit", "shaded", "Tsold"}
+    ]
     stacked = data.stack(batch=("y", "x", "time"))
     manual_outputs: dict[str, list[torch.Tensor]] = {
         **{name: [] for name in CanopyThermalRadianceResult.__dataclass_fields__},
@@ -844,7 +911,9 @@ def test_scope_grid_runner_fluorescence_matches_manual():
         coords={"y": y, "x": x, "time": times, "excitation_wavelength": np.arange(n_wle)},
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2
+    )
     module = ScopeGridDataModule(
         data,
         cfg,
@@ -926,11 +995,27 @@ def test_scope_grid_runner_layered_fluorescence_matches_manual():
         coords={"y": y, "x": x, "time": times, "excitation_wavelength": np.arange(n_wle), "layer": layers},
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2
+    )
     module = ScopeGridDataModule(
         data,
         cfg,
-        required_vars=["Cab", "Cw", "Cdm", "fqe", "LAI", "tts", "tto", "psi", "soil_spectrum", "Esun_", "Esky_", "etau", "etah"],
+        required_vars=[
+            "Cab",
+            "Cw",
+            "Cdm",
+            "fqe",
+            "LAI",
+            "tts",
+            "tto",
+            "psi",
+            "soil_spectrum",
+            "Esun_",
+            "Esky_",
+            "etau",
+            "etah",
+        ],
     )
     outputs = runner.run_layered_fluorescence(
         module,
@@ -1007,7 +1092,9 @@ def test_scope_grid_runner_thermal_matches_manual():
         coords={"y": y, "x": x, "time": times, "layer": layers},
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2
+    )
     module = ScopeGridDataModule(data, cfg, required_vars=["LAI", "tts", "tto", "psi", "Tcu", "Tch", "Tsu", "Tsh"])
     outputs = runner.run_thermal(
         module,
@@ -1070,7 +1157,9 @@ def test_scope_grid_runner_thermal_dataset_preserves_layered_dims():
         coords={"y": y, "x": x, "time": times, "layer": layers},
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2
+    )
     module = ScopeGridDataModule(data, cfg, required_vars=["LAI", "tts", "tto", "psi", "Tcu", "Tch", "Tsu", "Tsh"])
     flat_outputs = runner.run_thermal(
         module,
@@ -1140,7 +1229,9 @@ def test_scope_grid_runner_directional_thermal_dataset_preserves_direction_coord
         },
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2
+    )
     module = ScopeGridDataModule(data, cfg, required_vars=["LAI", "tts", "Tcu", "Tch", "Tsu", "Tsh"])
     flat_outputs = runner.run_directional_thermal(
         module,
@@ -1185,15 +1276,35 @@ def test_scope_grid_runner_thermal_profiles_dataset_preserves_layer_dims():
         coords={"y": y, "x": x, "time": times, "layer": layers},
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2
+    )
     module = ScopeGridDataModule(data, cfg, required_vars=["LAI", "tts", "tto", "psi", "Tcu", "Tch", "Tsu", "Tsh"])
     outputs = runner.run_thermal_profiles(
         module,
-        varmap={"LAI": "LAI", "tts": "tts", "tto": "tto", "psi": "psi", "Tcu": "Tcu", "Tch": "Tch", "Tsu": "Tsu", "Tsh": "Tsh"},
+        varmap={
+            "LAI": "LAI",
+            "tts": "tts",
+            "tto": "tto",
+            "psi": "psi",
+            "Tcu": "Tcu",
+            "Tch": "Tch",
+            "Tsu": "Tsu",
+            "Tsh": "Tsh",
+        },
     )
     dataset_outputs = runner.run_thermal_profiles_dataset(
         module,
-        varmap={"LAI": "LAI", "tts": "tts", "tto": "tto", "psi": "psi", "Tcu": "Tcu", "Tch": "Tch", "Tsu": "Tsu", "Tsh": "Tsh"},
+        varmap={
+            "LAI": "LAI",
+            "tts": "tts",
+            "tto": "tto",
+            "psi": "psi",
+            "Tcu": "Tcu",
+            "Tch": "Tch",
+            "Tsu": "Tsu",
+            "Tsh": "Tsh",
+        },
     )
 
     thermal_wavelengths = default_thermal_wavelengths(device=device, dtype=dtype).cpu().numpy()
@@ -1254,7 +1365,9 @@ def test_scope_grid_runner_biochemical_fluorescence_matches_manual():
         coords={"y": y, "x": x, "time": times, "excitation_wavelength": np.arange(n_wle), "layer": layers},
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2
+    )
     module = ScopeGridDataModule(
         data,
         cfg,
@@ -1425,10 +1538,14 @@ def test_scope_grid_runner_biochemical_fluorescence_dataset_uses_layer_dims():
         coords={"y": y, "x": x, "time": times, "excitation_wavelength": np.arange(n_wle), "layer": layers},
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2
+    )
     module = ScopeGridDataModule(data, cfg, required_vars=list(data.data_vars))
     outputs = runner.run_biochemical_fluorescence(module, varmap={name: name for name in data.data_vars})
-    dataset_outputs = runner.run_biochemical_fluorescence_dataset(module, varmap={name: name for name in data.data_vars})
+    dataset_outputs = runner.run_biochemical_fluorescence_dataset(
+        module, varmap={name: name for name in data.data_vars}
+    )
 
     assert dataset_outputs["Pnu_Cab"].dims == ("y", "x", "time", "layer", "Pnu_Cab_dim_2")
     assert dataset_outputs["sunlit_A"].dims == ("y", "x", "time", "layer", "sunlit_A_dim_2")
@@ -1480,10 +1597,14 @@ def test_scope_grid_runner_directional_fluorescence_dataset_preserves_direction_
         },
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2
+    )
     module = ScopeGridDataModule(data, cfg, required_vars=list(data.data_vars))
     flat_outputs = runner.run_directional_fluorescence(module, varmap={name: name for name in data.data_vars})
-    dataset_outputs = runner.run_directional_fluorescence_dataset(module, varmap={name: name for name in data.data_vars})
+    dataset_outputs = runner.run_directional_fluorescence_dataset(
+        module, varmap={name: name for name in data.data_vars}
+    )
 
     assert dataset_outputs.attrs["scope_product"] == "directional_fluorescence"
     assert dataset_outputs["LoF_"].dims == ("y", "x", "time", "direction", "fluorescence_wavelength")
@@ -1523,7 +1644,9 @@ def test_scope_grid_runner_fluorescence_profiles_dataset_preserves_layer_dims():
         coords={"y": y, "x": x, "time": times, "excitation_wavelength": np.arange(n_wle), "layer": layers},
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2
+    )
     module = ScopeGridDataModule(data, cfg, required_vars=list(data.data_vars))
     outputs = runner.run_fluorescence_profiles(module, varmap={name: name for name in data.data_vars})
     dataset_outputs = runner.run_fluorescence_profiles_dataset(module, varmap={name: name for name in data.data_vars})
@@ -1577,7 +1700,9 @@ def test_scope_grid_runner_run_scope_dataset_honours_reflectance_option_attrs():
         attrs={"calc_directional": 1, "calc_vert_profiles": 1, "calc_fluor": 0, "calc_planck": 0},
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2
+    )
     module = ScopeGridDataModule(data, cfg, required_vars=list(data.data_vars))
     runner = ScopeGridRunner(fluspect, sail, lidf=lidf)
     varmap = {name: name for name in data.data_vars}
@@ -1636,7 +1761,9 @@ def test_scope_grid_runner_run_scope_dataset_honours_fluorescence_option_attrs()
         attrs={"calc_directional": 1, "calc_vert_profiles": 1, "calc_fluor": 1, "calc_planck": 0},
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2
+    )
     module = ScopeGridDataModule(data, cfg, required_vars=list(data.data_vars))
     varmap = {name: name for name in data.data_vars}
 
@@ -1691,7 +1818,9 @@ def test_scope_grid_runner_run_scope_dataset_scope_options_override_dataset_attr
         attrs={"calc_directional": 0, "calc_vert_profiles": 0, "calc_fluor": 0, "calc_planck": 0},
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2
+    )
     module = ScopeGridDataModule(data, cfg, required_vars=list(data.data_vars))
     varmap = {name: name for name in data.data_vars}
 
@@ -1735,8 +1864,12 @@ def test_scope_grid_runner_from_scope_assets_resolves_soil_spectrum():
         coords={"y": y, "x": x, "time": times},
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
-    module = ScopeGridDataModule(data, cfg, required_vars=["Cab", "Cw", "Cdm", "LAI", "tts", "tto", "psi", "soil_spectrum"])
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2
+    )
+    module = ScopeGridDataModule(
+        data, cfg, required_vars=["Cab", "Cw", "Cdm", "LAI", "tts", "tto", "psi", "soil_spectrum"]
+    )
     outputs = runner.run(
         module,
         varmap={
@@ -1752,9 +1885,15 @@ def test_scope_grid_runner_from_scope_assets_resolves_soil_spectrum():
     )
 
     soil_library = load_soil_spectra(device=device, dtype=dtype)
-    reflectance_model = CanopyReflectanceModel(runner.fluspect, runner.sail, lidf=lidf, default_hotspot=runner.default_hotspot)
+    reflectance_model = CanopyReflectanceModel(
+        runner.fluspect, runner.sail, lidf=lidf, default_hotspot=runner.default_hotspot
+    )
     stacked = data.stack(batch=("y", "x", "time"))
-    manual_outputs: dict[str, list[torch.Tensor]] = {"leaf_refl": [], "leaf_tran": [], **{key: [] for key in CANOPY_KEYS}}
+    manual_outputs: dict[str, list[torch.Tensor]] = {
+        "leaf_refl": [],
+        "leaf_tran": [],
+        **{key: [] for key in CANOPY_KEYS},
+    }
     for label in stacked["Cab"].indexes["batch"]:
         idx = dict(batch=label)
         leafbio = LeafBioBatch(
@@ -1805,7 +1944,9 @@ def test_scope_grid_runner_from_scope_assets_resolves_bsm_soil_parameters():
         coords={"y": y, "x": x, "time": times},
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2
+    )
     module = ScopeGridDataModule(
         data,
         cfg,
@@ -1838,7 +1979,11 @@ def test_scope_grid_runner_from_scope_assets_resolves_bsm_soil_parameters():
         soil_index_base=runner.soil_index_base,
     )
     stacked = data.stack(batch=("y", "x", "time"))
-    manual_outputs: dict[str, list[torch.Tensor]] = {"leaf_refl": [], "leaf_tran": [], **{key: [] for key in CANOPY_KEYS}}
+    manual_outputs: dict[str, list[torch.Tensor]] = {
+        "leaf_refl": [],
+        "leaf_tran": [],
+        **{key: [] for key in CANOPY_KEYS},
+    }
     for label in stacked["Cab"].indexes["batch"]:
         idx = dict(batch=label)
         leafbio = LeafBioBatch(
@@ -1915,7 +2060,9 @@ def test_scope_grid_runner_energy_balance_fluorescence_matches_manual():
         coords={"y": y, "x": x, "time": times, "wavelength": np.arange(spectral.wlP.numel())},
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2
+    )
     module = ScopeGridDataModule(
         data,
         cfg,
@@ -1987,7 +2134,9 @@ def test_scope_grid_runner_energy_balance_fluorescence_matches_manual():
     )
 
     physiology_fields = [name for name in LeafBiochemistryResult.__dataclass_fields__ if name != "fcount"]
-    energy_fields = [name for name in CanopyEnergyBalanceResult.__dataclass_fields__ if name not in {"sunlit", "shaded", "Tsold"}]
+    energy_fields = [
+        name for name in CanopyEnergyBalanceResult.__dataclass_fields__ if name not in {"sunlit", "shaded", "Tsold"}
+    ]
     stacked = data.stack(batch=("y", "x", "time"))
     manual_outputs: dict[str, list[torch.Tensor]] = {
         **{name: [] for name in CanopyFluorescenceResult.__dataclass_fields__},
@@ -2100,7 +2249,9 @@ def test_scope_grid_runner_energy_balance_fluorescence_dataset_infers_layer_dims
         coords={"y": y, "x": x, "time": times, "wavelength": np.arange(spectral.wlP.numel())},
     )
 
-    cfg = SimulationConfig(roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2)
+    cfg = SimulationConfig(
+        roi_bounds=(0, 0, 1, 1), start_time=times[0], end_time=times[-1], device=str(device), dtype=dtype, chunk_size=2
+    )
     module = ScopeGridDataModule(data, cfg, required_vars=list(data.data_vars))
     outputs = runner.run_energy_balance_fluorescence(
         module,
@@ -2119,7 +2270,9 @@ def test_scope_grid_runner_energy_balance_fluorescence_dataset_infers_layer_dims
     assert dataset_outputs["sunlit_Cs_input"].dims == ("y", "x", "time", "layer")
     assert np.array_equal(dataset_outputs["layer"].values, np.arange(4))
     assert np.allclose(dataset_outputs["Pnu_Cab"].values, outputs["Pnu_Cab"].cpu().numpy().reshape(1, 1, 2, 4))
-    assert np.allclose(dataset_outputs["sunlit_Cs_input"].values, outputs["sunlit_Cs_input"].cpu().numpy().reshape(1, 1, 2, 4))
+    assert np.allclose(
+        dataset_outputs["sunlit_Cs_input"].values, outputs["sunlit_Cs_input"].cpu().numpy().reshape(1, 1, 2, 4)
+    )
 
 
 def test_scope_grid_runner_energy_balance_thermal_dataset_preserves_stable_outputs():

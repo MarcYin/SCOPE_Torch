@@ -12,7 +12,6 @@ import xarray as xr
 
 from scope.variables import render_variable_markdown
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCOPE_ROOT = REPO_ROOT / "upstream" / "SCOPE"
 INSTALLED_CWD = Path.home()

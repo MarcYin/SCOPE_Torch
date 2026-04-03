@@ -8,7 +8,7 @@ from .fluorescence import (
     CanopyFluorescenceResult,
 )
 from .foursail import FourSAILModel, FourSAILResult, campbell_lidf, scope_lazitab, scope_lidf, scope_litab
-from .layered_rt import LayerFluxProfiles, LayeredCanopyTransfer, LayeredCanopyTransportModel
+from .layered_rt import LayeredCanopyTransfer, LayeredCanopyTransportModel, LayerFluxProfiles
 from .reflectance import (
     CanopyDirectionalReflectanceResult,
     CanopyRadiationProfileResult,
@@ -17,8 +17,8 @@ from .reflectance import (
 )
 from .thermal import (
     CanopyDirectionalThermalResult,
-    CanopyThermalProfileResult,
     CanopyThermalBalanceResult,
+    CanopyThermalProfileResult,
     CanopyThermalRadianceModel,
     CanopyThermalRadianceResult,
     ThermalOptics,

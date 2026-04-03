@@ -1,5 +1,4 @@
 import numpy as np
-import pytest
 import torch
 from scipy.special import exp1
 
@@ -68,7 +67,9 @@ def test_expint_matches_scipy_and_supports_gradients():
     spectral = _make_spectral(device, dtype)
     model = FluspectModel(spectral, _make_optipar(spectral), dtype=dtype)
 
-    x = torch.tensor([1e-9, 1e-6, 1e-3, 0.1, 0.5, 1.0, 2.0, 10.0, 100.0], device=device, dtype=dtype, requires_grad=True)
+    x = torch.tensor(
+        [1e-9, 1e-6, 1e-3, 0.1, 0.5, 1.0, 2.0, 10.0, 100.0], device=device, dtype=dtype, requires_grad=True
+    )
     y = model._expint(x)
     expected = torch.from_numpy(exp1(x.detach().cpu().numpy())).to(device=device, dtype=dtype)
 

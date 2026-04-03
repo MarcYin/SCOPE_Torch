@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 import xarray as xr
 
@@ -69,7 +69,9 @@ def run(args: argparse.Namespace) -> None:
     with xr.open_dataset(args.weather) as weather_ds, xr.open_dataset(args.observation) as observation_ds:
         reference_ds = xr.open_dataset(args.s2_reference) if args.s2_reference else None
         try:
-            post_bio_da, post_bio_scale_da = read_s2_bio_inputs(args.bio_npz, year=args.year, reference_dataset=reference_ds)
+            post_bio_da, post_bio_scale_da = read_s2_bio_inputs(
+                args.bio_npz, year=args.year, reference_dataset=reference_ds
+            )
 
             time_slice = None
             if args.time_start or args.time_end:

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import fields
 from pathlib import Path
 
-from dataclasses import fields
+import xarray as xr
 
 from scope.canopy.fluorescence import (
     CanopyDirectionalFluorescenceResult,
@@ -21,8 +22,6 @@ from scope.canopy.thermal import (
 )
 from scope.energy import CanopyEnergyBalanceResult
 from scope.io.prepare import DEFAULT_SCOPE_OPTIONS
-import xarray as xr
-
 from scope.variables import (
     annotate_dataset,
     get_variable_definition,
@@ -31,7 +30,6 @@ from scope.variables import (
     search_variables,
     variable_attrs,
 )
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -112,11 +110,7 @@ def test_variable_registry_covers_public_result_dataclass_fields() -> None:
         CanopyDirectionalThermalResult,
         CanopyEnergyBalanceResult,
     )
-    public_names = {
-        field.name
-        for cls in result_classes
-        for field in fields(cls)
-    }
+    public_names = {field.name for cls in result_classes for field in fields(cls)}
 
     assert public_names.issubset(registry_names)
 

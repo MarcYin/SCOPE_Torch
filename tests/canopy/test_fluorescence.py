@@ -5,8 +5,7 @@ from scope.biochem import LeafBiochemistryInputs
 from scope.canopy.fluorescence import CanopyFluorescenceModel
 from scope.canopy.foursail import FourSAILModel, campbell_lidf, scope_lidf
 from scope.canopy.reflectance import CanopyReflectanceModel
-from scope.spectral.fluspect import LeafBioBatch
-from scope.spectral.fluspect import FluspectModel
+from scope.spectral.fluspect import FluspectModel, LeafBioBatch
 from scope.spectral.loaders import load_soil_spectra
 from scope.spectral.soil import SoilEmpiricalParams
 
@@ -50,8 +49,12 @@ def test_canopy_fluorescence_model_outputs_consistent_sif_fields():
         model.reflectance_model.fluspect.spectral.wlF,
     )
     assert torch.allclose(result.sigmaF, expected_sigmaf, atol=1e-12, rtol=1e-10)
-    assert torch.allclose(result.F684, result.LoF_[:, torch.argmin(torch.abs(model.reflectance_model.fluspect.spectral.wlF - 684.0))])
-    assert torch.allclose(result.F761, result.LoF_[:, torch.argmin(torch.abs(model.reflectance_model.fluspect.spectral.wlF - 761.0))])
+    assert torch.allclose(
+        result.F684, result.LoF_[:, torch.argmin(torch.abs(model.reflectance_model.fluspect.spectral.wlF - 684.0))]
+    )
+    assert torch.allclose(
+        result.F761, result.LoF_[:, torch.argmin(torch.abs(model.reflectance_model.fluspect.spectral.wlF - 761.0))]
+    )
 
     leafopt = model.reflectance_model.fluspect(leafbio)
     wlP = model.reflectance_model.fluspect.spectral.wlP

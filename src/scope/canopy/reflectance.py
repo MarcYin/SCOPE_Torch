@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
-from typing import Optional
 
 import torch
 
-from .foursail import FourSAILModel, FourSAILResult
-from .layered_rt import LayeredCanopyTransportModel
 from ..spectral.fluspect import FluspectModel, LeafBioBatch, LeafOptics
 from ..spectral.loaders import SoilSpectraLibrary, load_fluspect_resources, load_soil_spectra
 from ..spectral.soil import BSMSoilParameters, SoilBSMModel, SoilEmpiricalParams
+from .foursail import FourSAILModel, FourSAILResult
+from .layered_rt import LayeredCanopyTransportModel
 
 
 @dataclass(slots=True)
@@ -39,7 +38,7 @@ class CanopyReflectanceResult:
     gammaso: torch.Tensor
 
     @classmethod
-    def from_components(cls, leafopt: LeafOptics, sail: FourSAILResult) -> "CanopyReflectanceResult":
+    def from_components(cls, leafopt: LeafOptics, sail: FourSAILResult) -> CanopyReflectanceResult:
         return cls(
             leaf_refl=leafopt.refl,
             leaf_tran=leafopt.tran,
@@ -81,8 +80,8 @@ class CanopyReflectanceModel:
         *,
         lidf: torch.Tensor,
         default_hotspot: float = 0.2,
-        soil_spectra: Optional[SoilSpectraLibrary] = None,
-        soil_bsm: Optional[SoilBSMModel] = None,
+        soil_spectra: SoilSpectraLibrary | None = None,
+        soil_bsm: SoilBSMModel | None = None,
         soil_index_base: int = 1,
     ) -> None:
         self.fluspect = fluspect
@@ -99,18 +98,18 @@ class CanopyReflectanceModel:
         cls,
         *,
         lidf: torch.Tensor,
-        sail: Optional[FourSAILModel] = None,
-        path: Optional[str] = None,
-        soil_path: Optional[str] = None,
-        scope_root_path: Optional[str] = None,
-        device: Optional[torch.device | str] = None,
+        sail: FourSAILModel | None = None,
+        path: str | None = None,
+        soil_path: str | None = None,
+        scope_root_path: str | None = None,
+        device: torch.device | str | None = None,
         dtype: torch.dtype = torch.float32,
         ndub: int = 15,
         doublings_step: int = 5,
         default_hotspot: float = 0.2,
         soil_index_base: int = 1,
         soil_empirical: SoilEmpiricalParams | None = None,
-    ) -> "CanopyReflectanceModel":
+    ) -> CanopyReflectanceModel:
         resources = load_fluspect_resources(
             path,
             scope_root_path=scope_root_path,
@@ -131,7 +130,9 @@ class CanopyReflectanceModel:
             device=fluspect.device,
             dtype=fluspect.dtype,
         )
-        soil_bsm = SoilBSMModel.from_resources(resources, empirical=soil_empirical, device=fluspect.device, dtype=fluspect.dtype)
+        soil_bsm = SoilBSMModel.from_resources(
+            resources, empirical=soil_empirical, device=fluspect.device, dtype=fluspect.dtype
+        )
         sail_model = sail if sail is not None else FourSAILModel(lidf=lidf)
         return cls(
             fluspect,
@@ -146,14 +147,14 @@ class CanopyReflectanceModel:
     def soil_reflectance(
         self,
         *,
-        soil_refl: Optional[torch.Tensor] = None,
-        soil_spectrum: Optional[torch.Tensor] = None,
+        soil_refl: torch.Tensor | None = None,
+        soil_spectrum: torch.Tensor | None = None,
         bsm: BSMSoilParameters | None = None,
-        BSMBrightness: Optional[torch.Tensor] = None,
-        BSMlat: Optional[torch.Tensor] = None,
-        BSMlon: Optional[torch.Tensor] = None,
-        SMC: Optional[torch.Tensor] = None,
-        soil_index_base: Optional[int] = None,
+        BSMBrightness: torch.Tensor | None = None,
+        BSMlat: torch.Tensor | None = None,
+        BSMlon: torch.Tensor | None = None,
+        SMC: torch.Tensor | None = None,
+        soil_index_base: int | None = None,
     ) -> torch.Tensor:
         if soil_refl is not None:
             return torch.as_tensor(soil_refl, device=self.fluspect.device, dtype=self.fluspect.dtype)
@@ -190,9 +191,9 @@ class CanopyReflectanceModel:
         tto: torch.Tensor,
         psi: torch.Tensor,
         *,
-        hotspot: Optional[torch.Tensor] = None,
-        lidf: Optional[torch.Tensor] = None,
-        nlayers: Optional[int | torch.Tensor] = None,
+        hotspot: torch.Tensor | None = None,
+        lidf: torch.Tensor | None = None,
+        nlayers: int | torch.Tensor | None = None,
     ) -> CanopyReflectanceResult:
         leafopt = self.fluspect(leafbio)
         hotspot_value = hotspot if hotspot is not None else torch.full_like(torch.as_tensor(lai), self.default_hotspot)
@@ -246,9 +247,9 @@ class CanopyReflectanceModel:
         Esun_: torch.Tensor,
         Esky_: torch.Tensor,
         *,
-        hotspot: Optional[torch.Tensor] = None,
-        lidf: Optional[torch.Tensor] = None,
-        nlayers: Optional[int] = None,
+        hotspot: torch.Tensor | None = None,
+        lidf: torch.Tensor | None = None,
+        nlayers: int | None = None,
     ) -> CanopyRadiationProfileResult:
         leafopt = self.fluspect(leafbio)
         batch, nwl = leafopt.refl.shape
@@ -303,9 +304,9 @@ class CanopyReflectanceModel:
         Esun_: torch.Tensor,
         Esky_: torch.Tensor,
         *,
-        hotspot: Optional[torch.Tensor] = None,
-        lidf: Optional[torch.Tensor] = None,
-        nlayers: Optional[int] = None,
+        hotspot: torch.Tensor | None = None,
+        lidf: torch.Tensor | None = None,
+        nlayers: int | None = None,
     ) -> CanopyDirectionalReflectanceResult:
         device = self.fluspect.device
         dtype = self.fluspect.dtype
@@ -357,7 +358,7 @@ class CanopyReflectanceModel:
         psi: torch.Tensor,
         hotspot: torch.Tensor,
         lidf: torch.Tensor,
-        nlayers: Optional[int | torch.Tensor] = None,
+        nlayers: int | torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         soil = self.sail._ensure_2d(soil_refl, target_shape=leafopt.refl.shape)
         batch, nwl = leafopt.refl.shape
@@ -449,12 +450,20 @@ class CanopyReflectanceModel:
         iLAI = transfer.iLAI.unsqueeze(-1)
 
         piLocd = iLAI * torch.sum(
-            (transfer.vb.unsqueeze(1) * diffuse.Emin_[:, : transfer.nlayers, :] + transfer.vf.unsqueeze(1) * diffuse.Eplu_[:, : transfer.nlayers, :]) * Po,
+            (
+                transfer.vb.unsqueeze(1) * diffuse.Emin_[:, : transfer.nlayers, :]
+                + transfer.vf.unsqueeze(1) * diffuse.Eplu_[:, : transfer.nlayers, :]
+            )
+            * Po,
             dim=1,
         )
         piLosd = soil * diffuse.Emin_[:, -1, :] * transfer.Po[:, -1].unsqueeze(-1)
         piLocu_diffuse = iLAI * torch.sum(
-            (transfer.vb.unsqueeze(1) * direct.Emin_[:, : transfer.nlayers, :] + transfer.vf.unsqueeze(1) * direct.Eplu_[:, : transfer.nlayers, :]) * Po,
+            (
+                transfer.vb.unsqueeze(1) * direct.Emin_[:, : transfer.nlayers, :]
+                + transfer.vf.unsqueeze(1) * direct.Eplu_[:, : transfer.nlayers, :]
+            )
+            * Po,
             dim=1,
         )
         piLocu_hotspot = iLAI * torch.sum(transfer.w.unsqueeze(1) * Pso, dim=1)
@@ -471,7 +480,7 @@ class CanopyReflectanceModel:
             "rsod": rsod,
         }
 
-    def _uniform_batch_nlayers(self, batch_nlayers: torch.Tensor) -> Optional[int]:
+    def _uniform_batch_nlayers(self, batch_nlayers: torch.Tensor) -> int | None:
         if batch_nlayers.ndim == 0 or batch_nlayers.numel() == 1:
             return max(2, int(batch_nlayers.reshape(-1)[0]))
         first = batch_nlayers[:1]
@@ -524,7 +533,7 @@ class CanopyReflectanceModel:
     def _resolve_uniform_nlayers(
         self,
         *,
-        nlayers: Optional[int],
+        nlayers: int | None,
         lai: torch.Tensor,
         batch: int,
         device: torch.device,
@@ -538,7 +547,7 @@ class CanopyReflectanceModel:
 
     def _resolve_nlayers(
         self,
-        nlayers: Optional[int | torch.Tensor],
+        nlayers: int | torch.Tensor | None,
         lai: torch.Tensor,
         batch: int,
         *,

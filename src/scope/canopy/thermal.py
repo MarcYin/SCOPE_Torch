@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 import torch
 
+from ..spectral.soil import SoilEmpiricalParams
 from .foursail import FourSAILModel
 from .layered_rt import LayeredCanopyTransportModel
 from .reflectance import CanopyReflectanceModel
-from ..spectral.soil import SoilEmpiricalParams
 
 
 @dataclass(slots=True)
@@ -78,18 +77,18 @@ class CanopyThermalRadianceModel:
         cls,
         *,
         lidf: torch.Tensor,
-        sail: Optional[FourSAILModel] = None,
-        path: Optional[str] = None,
-        soil_path: Optional[str] = None,
-        scope_root_path: Optional[str] = None,
-        device: Optional[torch.device | str] = None,
+        sail: FourSAILModel | None = None,
+        path: str | None = None,
+        soil_path: str | None = None,
+        scope_root_path: str | None = None,
+        device: torch.device | str | None = None,
         dtype: torch.dtype = torch.float32,
         ndub: int = 15,
         doublings_step: int = 5,
         default_hotspot: float = 0.2,
         soil_index_base: int = 1,
         soil_empirical: SoilEmpiricalParams | None = None,
-    ) -> "CanopyThermalRadianceModel":
+    ) -> CanopyThermalRadianceModel:
         reflectance = CanopyReflectanceModel.from_scope_assets(
             lidf=lidf,
             sail=sail,
@@ -119,21 +118,27 @@ class CanopyThermalRadianceModel:
         Tsh: torch.Tensor,
         *,
         thermal_optics: ThermalOptics | None = None,
-        hotspot: Optional[torch.Tensor] = None,
-        lidf: Optional[torch.Tensor] = None,
-        nlayers: Optional[int] = None,
-        wlT: Optional[torch.Tensor] = None,
+        hotspot: torch.Tensor | None = None,
+        lidf: torch.Tensor | None = None,
+        nlayers: int | None = None,
+        wlT: torch.Tensor | None = None,
     ) -> CanopyThermalRadianceResult:
         thermal = thermal_optics or ThermalOptics()
         device = self.reflectance_model.fluspect.device
         dtype = self.reflectance_model.fluspect.dtype
-        wlT = default_thermal_wavelengths(device=device, dtype=dtype) if wlT is None else torch.as_tensor(wlT, device=device, dtype=dtype)
+        wlT = (
+            default_thermal_wavelengths(device=device, dtype=dtype)
+            if wlT is None
+            else torch.as_tensor(wlT, device=device, dtype=dtype)
+        )
 
         lai_tensor = torch.as_tensor(lai, device=device, dtype=dtype)
         if lai_tensor.ndim == 0:
             lai_tensor = lai_tensor.unsqueeze(0)
         batch = lai_tensor.shape[0]
-        hotspot_value = hotspot if hotspot is not None else torch.full_like(lai_tensor, self.reflectance_model.default_hotspot)
+        hotspot_value = (
+            hotspot if hotspot is not None else torch.full_like(lai_tensor, self.reflectance_model.default_hotspot)
+        )
 
         nl = self._resolve_nlayers(nlayers, Tcu=Tcu, Tch=Tch)
         rho = self._broadcast_scalar_spectrum(thermal.rho_thermal, batch, wlT)
@@ -176,7 +181,10 @@ class CanopyThermalRadianceModel:
             denom = (1.0 - transfer.rho_dd[:, layer, :] * transfer.R_dd[:, layer + 1, :]).clamp(min=1e-9)
             source = Hc[:, layer, :] * transfer.iLAI.unsqueeze(-1)
             Y[:, layer, :] = (transfer.rho_dd[:, layer, :] * U[:, layer + 1, :] + source) / denom
-            U[:, layer, :] = transfer.tau_dd[:, layer, :] * (transfer.R_dd[:, layer + 1, :] * Y[:, layer, :] + U[:, layer + 1, :]) + source
+            U[:, layer, :] = (
+                transfer.tau_dd[:, layer, :] * (transfer.R_dd[:, layer + 1, :] * Y[:, layer, :] + U[:, layer + 1, :])
+                + source
+            )
         for layer in range(nl):
             Emin[:, layer + 1, :] = transfer.Xdd[:, layer, :] * Emin[:, layer, :] + Y[:, layer, :]
             Eplu[:, layer, :] = transfer.R_dd[:, layer, :] * Emin[:, layer, :] + U[:, layer, :]
@@ -189,7 +197,9 @@ class CanopyThermalRadianceModel:
             + transfer.ko.unsqueeze(-1).unsqueeze(-1) * Hcsu * Pso
             + (transfer.vb.unsqueeze(1) * Emin[:, :nl, :] + transfer.vf.unsqueeze(1) * Eplu[:, :nl, :]) * Po
         ).sum(dim=1)
-        piLos = Hssh * (transfer.Po[:, -1].unsqueeze(-1) - transfer.Pso[:, -1].unsqueeze(-1)) + Hssu * transfer.Pso[:, -1].unsqueeze(-1)
+        piLos = Hssh * (transfer.Po[:, -1].unsqueeze(-1) - transfer.Pso[:, -1].unsqueeze(-1)) + Hssu * transfer.Pso[
+            :, -1
+        ].unsqueeze(-1)
         piLot = piLov + piLos
         Lot = piLot / torch.pi
         Eoutte = Eplu[:, 0, :]
@@ -221,10 +231,10 @@ class CanopyThermalRadianceModel:
         Tsh: torch.Tensor,
         *,
         thermal_optics: ThermalOptics | None = None,
-        hotspot: Optional[torch.Tensor] = None,
-        lidf: Optional[torch.Tensor] = None,
-        nlayers: Optional[int] = None,
-        wlT: Optional[torch.Tensor] = None,
+        hotspot: torch.Tensor | None = None,
+        lidf: torch.Tensor | None = None,
+        nlayers: int | None = None,
+        wlT: torch.Tensor | None = None,
     ) -> CanopyThermalProfileResult:
         result = self(
             lai,
@@ -244,12 +254,18 @@ class CanopyThermalRadianceModel:
         thermal = thermal_optics or ThermalOptics()
         device = self.reflectance_model.fluspect.device
         dtype = self.reflectance_model.fluspect.dtype
-        wlT = default_thermal_wavelengths(device=device, dtype=dtype) if wlT is None else torch.as_tensor(wlT, device=device, dtype=dtype)
+        wlT = (
+            default_thermal_wavelengths(device=device, dtype=dtype)
+            if wlT is None
+            else torch.as_tensor(wlT, device=device, dtype=dtype)
+        )
         lai_tensor = torch.as_tensor(lai, device=device, dtype=dtype)
         if lai_tensor.ndim == 0:
             lai_tensor = lai_tensor.unsqueeze(0)
         batch = lai_tensor.shape[0]
-        hotspot_value = hotspot if hotspot is not None else torch.full_like(lai_tensor, self.reflectance_model.default_hotspot)
+        hotspot_value = (
+            hotspot if hotspot is not None else torch.full_like(lai_tensor, self.reflectance_model.default_hotspot)
+        )
         nl = self._resolve_nlayers(nlayers, Tcu=Tcu, Tch=Tch)
         rho = self._broadcast_scalar_spectrum(thermal.rho_thermal, batch, wlT)
         tau = self._broadcast_scalar_spectrum(thermal.tau_thermal, batch, wlT)
@@ -287,10 +303,10 @@ class CanopyThermalRadianceModel:
         Tsh: torch.Tensor,
         *,
         thermal_optics: ThermalOptics | None = None,
-        hotspot: Optional[torch.Tensor] = None,
-        lidf: Optional[torch.Tensor] = None,
-        nlayers: Optional[int] = None,
-        wlT: Optional[torch.Tensor] = None,
+        hotspot: torch.Tensor | None = None,
+        lidf: torch.Tensor | None = None,
+        nlayers: int | None = None,
+        wlT: torch.Tensor | None = None,
     ) -> CanopyDirectionalThermalResult:
         device = self.reflectance_model.fluspect.device
         dtype = self.reflectance_model.fluspect.dtype
@@ -304,7 +320,9 @@ class CanopyThermalRadianceModel:
             lai_tensor = lai_tensor.unsqueeze(0)
         batch = lai_tensor.shape[0]
         tts_tensor = self._expand_batch(tts, batch, device=device, dtype=dtype)
-        hotspot_value = hotspot if hotspot is not None else torch.full_like(lai_tensor, self.reflectance_model.default_hotspot)
+        hotspot_value = (
+            hotspot if hotspot is not None else torch.full_like(lai_tensor, self.reflectance_model.default_hotspot)
+        )
         sigma_sb = torch.as_tensor(5.67e-8, device=device, dtype=dtype)
 
         lot = []
@@ -347,9 +365,9 @@ class CanopyThermalRadianceModel:
         Tsh: torch.Tensor,
         *,
         thermal_optics: ThermalOptics | None = None,
-        hotspot: Optional[torch.Tensor] = None,
-        lidf: Optional[torch.Tensor] = None,
-        nlayers: Optional[int] = None,
+        hotspot: torch.Tensor | None = None,
+        lidf: torch.Tensor | None = None,
+        nlayers: int | None = None,
     ) -> CanopyThermalBalanceResult:
         thermal = thermal_optics or ThermalOptics()
         device = self.reflectance_model.fluspect.device
@@ -359,7 +377,9 @@ class CanopyThermalRadianceModel:
         if lai_tensor.ndim == 0:
             lai_tensor = lai_tensor.unsqueeze(0)
         batch = lai_tensor.shape[0]
-        hotspot_value = hotspot if hotspot is not None else torch.full_like(lai_tensor, self.reflectance_model.default_hotspot)
+        hotspot_value = (
+            hotspot if hotspot is not None else torch.full_like(lai_tensor, self.reflectance_model.default_hotspot)
+        )
 
         nl = self._resolve_nlayers(nlayers, Tcu=Tcu, Tch=Tch)
         rho = self._broadcast_scalar_value(thermal.rho_thermal, batch, device=device, dtype=dtype)
@@ -422,7 +442,9 @@ class CanopyThermalRadianceModel:
             canopyemis=canopyemis,
         )
 
-    def _planck(self, wavelength_nm: torch.Tensor, temperature_k: torch.Tensor, emissivity: torch.Tensor) -> torch.Tensor:
+    def _planck(
+        self, wavelength_nm: torch.Tensor, temperature_k: torch.Tensor, emissivity: torch.Tensor
+    ) -> torch.Tensor:
         # First radiation constant c1 = 2*h*c^2 [W·m^2] (CODATA 2018),
         # scaled for wavelength in nm → metre conversion in wavelength_term.
         c1 = torch.as_tensor(1.191066e-22, device=wavelength_nm.device, dtype=wavelength_nm.dtype)
@@ -437,7 +459,9 @@ class CanopyThermalRadianceModel:
         kelvin = torch.clamp(temperature_c + 273.15, min=0.0)
         return sigma_sb * kelvin**4
 
-    def _broadcast_scalar_spectrum(self, value: torch.Tensor | float, batch: int, wavelength: torch.Tensor) -> torch.Tensor:
+    def _broadcast_scalar_spectrum(
+        self, value: torch.Tensor | float, batch: int, wavelength: torch.Tensor
+    ) -> torch.Tensor:
         tensor = torch.as_tensor(value, device=wavelength.device, dtype=wavelength.dtype)
         if tensor.ndim == 0:
             tensor = tensor.view(1, 1).expand(batch, wavelength.numel())
@@ -457,7 +481,9 @@ class CanopyThermalRadianceModel:
             raise ValueError("Thermal optics must be scalar, 1D, or 2D")
         return tensor
 
-    def _broadcast_scalar_value(self, value: torch.Tensor | float, batch: int, *, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    def _broadcast_scalar_value(
+        self, value: torch.Tensor | float, batch: int, *, device: torch.device, dtype: torch.dtype
+    ) -> torch.Tensor:
         tensor = torch.as_tensor(value, device=device, dtype=dtype)
         if tensor.ndim == 0:
             return tensor.repeat(batch)
@@ -505,9 +531,13 @@ class CanopyThermalRadianceModel:
                 return tensor.reshape(batch, nlayers, nori)
             if tensor.shape[0] == 1 and tensor.shape[1] == nlayers:
                 return tensor.reshape(1, nlayers, nori).expand(batch, nlayers, nori)
-        raise ValueError(f"Layer temperatures must broadcast to shape ({batch}, {nlayers}) or ({batch}, {nlayers}, {nori})")
+        raise ValueError(
+            f"Layer temperatures must broadcast to shape ({batch}, {nlayers}) or ({batch}, {nlayers}, {nori})"
+        )
 
-    def _expand_batch(self, value: torch.Tensor | float, batch: int, *, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    def _expand_batch(
+        self, value: torch.Tensor | float, batch: int, *, device: torch.device, dtype: torch.dtype
+    ) -> torch.Tensor:
         tensor = torch.as_tensor(value, device=device, dtype=dtype)
         if tensor.ndim == 0:
             return tensor.repeat(batch)
@@ -517,14 +547,16 @@ class CanopyThermalRadianceModel:
             return tensor.expand(batch)
         raise ValueError("Scalar thermal parameters must broadcast to the batch dimension")
 
-    def _resolve_nlayers(self, nlayers: Optional[int], *, Tcu: torch.Tensor, Tch: torch.Tensor) -> int:
+    def _resolve_nlayers(self, nlayers: int | None, *, Tcu: torch.Tensor, Tch: torch.Tensor) -> int:
         for value in (Tcu, Tch):
             tensor = torch.as_tensor(value)
             if tensor.ndim >= 2:
                 return int(tensor.shape[1])
         return int(nlayers) if nlayers is not None else 60
 
-    def _canopy_emission(self, temperature_c: torch.Tensor, emissivity: torch.Tensor, transfer, wavelength_nm: torch.Tensor) -> torch.Tensor:
+    def _canopy_emission(
+        self, temperature_c: torch.Tensor, emissivity: torch.Tensor, transfer, wavelength_nm: torch.Tensor
+    ) -> torch.Tensor:
         thermal = torch.pi * self._planck(wavelength_nm, temperature_c.unsqueeze(-1) + 273.15, emissivity.unsqueeze(1))
         if thermal.ndim == 4:
             weights = transfer.lidf_azimuth.unsqueeze(1).unsqueeze(-1)
@@ -583,7 +615,9 @@ class CanopyThermalRadianceModel:
         for layer in range(nl - 1, -1, -1):
             denom = (1.0 - rho_dd[:, layer] * R_dd[:, layer + 1]).clamp(min=1e-9)
             Y[:, layer] = (rho_dd[:, layer] * U[:, layer + 1] + Hc[:, layer] * transfer.iLAI) / denom
-            U[:, layer] = tau_dd[:, layer] * (R_dd[:, layer + 1] * Y[:, layer] + U[:, layer + 1]) + Hc[:, layer] * transfer.iLAI
+            U[:, layer] = (
+                tau_dd[:, layer] * (R_dd[:, layer + 1] * Y[:, layer] + U[:, layer + 1]) + Hc[:, layer] * transfer.iLAI
+            )
         for layer in range(nl):
             Emin[:, layer + 1] = transfer.Xdd[:, layer, 0] * Emin[:, layer] + Y[:, layer]
             Eplu[:, layer] = transfer.R_dd[:, layer, 0] * Emin[:, layer] + U[:, layer]

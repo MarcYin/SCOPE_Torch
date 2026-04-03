@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
-from typing import Dict, Mapping, Optional, Sequence
+from collections.abc import Mapping, Sequence
 
 import torch
 import xarray as xr
@@ -21,41 +21,39 @@ def _progress(iterable, total=None, desc=None, disable=False):
         return _tqdm(iterable, total=total, desc=desc)
     return iterable
 
+
 from ..biochem import BiochemicalOptions, LeafBiochemistryInputs, LeafBiochemistryResult
 from ..canopy.fluorescence import (
-    CanopyDirectionalFluorescenceResult,
-    CanopyFluorescenceProfileResult,
     CanopyFluorescenceModel,
+    CanopyFluorescenceProfileResult,
     CanopyFluorescenceResult,
 )
+from ..canopy.foursail import FourSAILModel
 from ..canopy.reflectance import (
-    CanopyDirectionalReflectanceResult,
     CanopyRadiationProfileResult,
     CanopyReflectanceModel,
     CanopyReflectanceResult,
 )
 from ..canopy.thermal import (
-    CanopyDirectionalThermalResult,
     CanopyThermalProfileResult,
     CanopyThermalRadianceModel,
     CanopyThermalRadianceResult,
     ThermalOptics,
     default_thermal_wavelengths,
 )
+from ..data import ScopeGridDataModule
 from ..energy import (
-    CanopyEnergyBalanceResult,
     CanopyEnergyBalanceModel,
+    CanopyEnergyBalanceResult,
     EnergyBalanceCanopy,
     EnergyBalanceMeteo,
     EnergyBalanceOptions,
     EnergyBalanceSoil,
 )
-from ..canopy.foursail import FourSAILModel
 from ..spectral.fluspect import FluspectModel, LeafBioBatch
 from ..spectral.loaders import SoilSpectraLibrary, load_fluspect_resources, load_soil_spectra
 from ..spectral.soil import SoilBSMModel, SoilEmpiricalParams
 from ..variables import annotate_dataset
-from ..data import ScopeGridDataModule
 
 
 class ScopeGridRunner:
@@ -68,8 +66,8 @@ class ScopeGridRunner:
         *,
         lidf: torch.Tensor,
         default_hotspot: float = 0.2,
-        soil_spectra: Optional[SoilSpectraLibrary] = None,
-        soil_bsm: Optional[SoilBSMModel] = None,
+        soil_spectra: SoilSpectraLibrary | None = None,
+        soil_bsm: SoilBSMModel | None = None,
         soil_index_base: int = 1,
     ) -> None:
         self.fluspect = fluspect
@@ -97,18 +95,18 @@ class ScopeGridRunner:
         cls,
         *,
         lidf: torch.Tensor,
-        sail: Optional[FourSAILModel] = None,
-        fluspect_path: Optional[str] = None,
-        soil_path: Optional[str] = None,
-        scope_root_path: Optional[str] = None,
-        device: Optional[torch.device | str] = None,
+        sail: FourSAILModel | None = None,
+        fluspect_path: str | None = None,
+        soil_path: str | None = None,
+        scope_root_path: str | None = None,
+        device: torch.device | str | None = None,
         dtype: torch.dtype = torch.float32,
         ndub: int = 15,
         doublings_step: int = 5,
         default_hotspot: float = 0.2,
         soil_index_base: int = 1,
         soil_empirical: SoilEmpiricalParams | None = None,
-    ) -> "ScopeGridRunner":
+    ) -> ScopeGridRunner:
         resources = load_fluspect_resources(
             fluspect_path,
             scope_root_path=scope_root_path,
@@ -129,7 +127,9 @@ class ScopeGridRunner:
             device=fluspect.device,
             dtype=fluspect.dtype,
         )
-        soil_bsm = SoilBSMModel.from_resources(resources, empirical=soil_empirical, device=fluspect.device, dtype=fluspect.dtype)
+        soil_bsm = SoilBSMModel.from_resources(
+            resources, empirical=soil_empirical, device=fluspect.device, dtype=fluspect.dtype
+        )
         sail_model = sail if sail is not None else FourSAILModel(lidf=lidf)
         return cls(
             fluspect,
@@ -146,9 +146,9 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
-    ) -> Dict[str, torch.Tensor]:
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
+    ) -> dict[str, torch.Tensor]:
         outputs: dict[str, list[torch.Tensor]] = {name: [] for name in CanopyReflectanceResult.__dataclass_fields__}
         for batch in _progress(data_module.iter_batches(), desc="reflectance"):
             leaf_kwargs = self._leafbio_kwargs(batch, varmap)
@@ -183,8 +183,8 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
     ) -> xr.Dataset:
         outputs = self.run(
             data_module,
@@ -199,11 +199,11 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        directional_tto: Optional[torch.Tensor] = None,
-        directional_psi: Optional[torch.Tensor] = None,
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
-    ) -> Dict[str, torch.Tensor]:
+        directional_tto: torch.Tensor | None = None,
+        directional_psi: torch.Tensor | None = None,
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
+    ) -> dict[str, torch.Tensor]:
         outputs: dict[str, list[torch.Tensor]] = {name: [] for name in ("refl_", "rso_")}
         tto_angles, psi_angles = self._directional_angles(
             data_module,
@@ -246,10 +246,10 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        directional_tto: Optional[torch.Tensor] = None,
-        directional_psi: Optional[torch.Tensor] = None,
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
+        directional_tto: torch.Tensor | None = None,
+        directional_psi: torch.Tensor | None = None,
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
     ) -> xr.Dataset:
         tto_angles, psi_angles = self._directional_angles(
             data_module,
@@ -279,11 +279,13 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
-    ) -> Dict[str, torch.Tensor]:
-        outputs: dict[str, list[torch.Tensor]] = {name: [] for name in CanopyRadiationProfileResult.__dataclass_fields__}
-        expected_layer_count: Optional[int] = None
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
+    ) -> dict[str, torch.Tensor]:
+        outputs: dict[str, list[torch.Tensor]] = {
+            name: [] for name in CanopyRadiationProfileResult.__dataclass_fields__
+        }
+        expected_layer_count: int | None = None
         for batch in _progress(data_module.iter_batches(), desc="reflectance-profiles"):
             leaf_kwargs = self._leafbio_kwargs(batch, varmap)
             leafbio = LeafBioBatch(**leaf_kwargs)
@@ -322,8 +324,8 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
     ) -> xr.Dataset:
         outputs = self.run_reflectance_profiles(
             data_module,
@@ -357,10 +359,10 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        biochem_options: Optional[BiochemicalOptions] = None,
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
-    ) -> Dict[str, torch.Tensor]:
+        biochem_options: BiochemicalOptions | None = None,
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
+    ) -> dict[str, torch.Tensor]:
         physiology_fields = [name for name in LeafBiochemistryResult.__dataclass_fields__ if name != "fcount"]
         outputs: dict[str, list[torch.Tensor]] = {
             **{name: [] for name in CanopyFluorescenceResult.__dataclass_fields__},
@@ -406,7 +408,9 @@ class ScopeGridRunner:
                 fV=batch[varmap["fV"]] if "fV" in varmap and varmap["fV"] in batch else 1.0,
                 biochem_options=biochem_options,
                 hotspot=hotspot,
-                nlayers=self._layer_count(nlayers, etau=None, etah=None, Tcu=batch[varmap["Tcu"]], Tch=batch[varmap["Tch"]]),
+                nlayers=self._layer_count(
+                    nlayers, etau=None, etah=None, Tcu=batch[varmap["Tcu"]], Tch=batch[varmap["Tch"]]
+                ),
             )
             for name in CanopyFluorescenceResult.__dataclass_fields__:
                 outputs[name].append(getattr(result.fluorescence, name))
@@ -423,9 +427,9 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        biochem_options: Optional[BiochemicalOptions] = None,
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
+        biochem_options: BiochemicalOptions | None = None,
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
     ) -> xr.Dataset:
         outputs = self.run_biochemical_fluorescence(
             data_module,
@@ -441,14 +445,16 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        biochem_options: Optional[BiochemicalOptions] = None,
-        energy_options: Optional[EnergyBalanceOptions] = None,
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
+        biochem_options: BiochemicalOptions | None = None,
+        energy_options: EnergyBalanceOptions | None = None,
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
         soil_heat_method: int = 2,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         physiology_fields = [name for name in LeafBiochemistryResult.__dataclass_fields__ if name != "fcount"]
-        energy_fields = [name for name in CanopyEnergyBalanceResult.__dataclass_fields__ if name not in {"sunlit", "shaded", "Tsold"}]
+        energy_fields = [
+            name for name in CanopyEnergyBalanceResult.__dataclass_fields__ if name not in {"sunlit", "shaded", "Tsold"}
+        ]
         outputs: dict[str, list[torch.Tensor]] = {
             **{name: [] for name in CanopyFluorescenceResult.__dataclass_fields__},
             **{name: [] for name in energy_fields},
@@ -494,14 +500,22 @@ class ScopeGridRunner:
                 rss=batch[varmap["rss"]],
                 rbs=batch[varmap["rbs"]],
                 thermal_optics=ThermalOptics(
-                    rho_thermal=batch[varmap["rho_thermal"]] if "rho_thermal" in varmap and varmap["rho_thermal"] in batch else 0.01,
-                    tau_thermal=batch[varmap["tau_thermal"]] if "tau_thermal" in varmap and varmap["tau_thermal"] in batch else 0.01,
-                    rs_thermal=batch[varmap["rs_thermal"]] if "rs_thermal" in varmap and varmap["rs_thermal"] in batch else 0.06,
+                    rho_thermal=batch[varmap["rho_thermal"]]
+                    if "rho_thermal" in varmap and varmap["rho_thermal"] in batch
+                    else 0.01,
+                    tau_thermal=batch[varmap["tau_thermal"]]
+                    if "tau_thermal" in varmap and varmap["tau_thermal"] in batch
+                    else 0.01,
+                    rs_thermal=batch[varmap["rs_thermal"]]
+                    if "rs_thermal" in varmap and varmap["rs_thermal"] in batch
+                    else 0.06,
                 ),
                 soil_heat_method=soil_heat_method,
                 GAM=batch[varmap["GAM"]] if "GAM" in varmap and varmap["GAM"] in batch else 0.0,
                 Tsold=batch[varmap["Tsold"]] if "Tsold" in varmap and varmap["Tsold"] in batch else None,
-                dt_seconds=batch[varmap["dt_seconds"]] if "dt_seconds" in varmap and varmap["dt_seconds"] in batch else None,
+                dt_seconds=batch[varmap["dt_seconds"]]
+                if "dt_seconds" in varmap and varmap["dt_seconds"] in batch
+                else None,
             )
 
             result = self.energy_balance_model.solve_fluorescence(
@@ -547,10 +561,10 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        biochem_options: Optional[BiochemicalOptions] = None,
-        energy_options: Optional[EnergyBalanceOptions] = None,
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
+        biochem_options: BiochemicalOptions | None = None,
+        energy_options: EnergyBalanceOptions | None = None,
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
         soil_heat_method: int = 2,
     ) -> xr.Dataset:
         outputs = self.run_energy_balance_fluorescence(
@@ -569,14 +583,16 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        biochem_options: Optional[BiochemicalOptions] = None,
-        energy_options: Optional[EnergyBalanceOptions] = None,
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
+        biochem_options: BiochemicalOptions | None = None,
+        energy_options: EnergyBalanceOptions | None = None,
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
         soil_heat_method: int = 2,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         physiology_fields = [name for name in LeafBiochemistryResult.__dataclass_fields__ if name != "fcount"]
-        energy_fields = [name for name in CanopyEnergyBalanceResult.__dataclass_fields__ if name not in {"sunlit", "shaded", "Tsold"}]
+        energy_fields = [
+            name for name in CanopyEnergyBalanceResult.__dataclass_fields__ if name not in {"sunlit", "shaded", "Tsold"}
+        ]
         outputs: dict[str, list[torch.Tensor]] = {
             **{name: [] for name in CanopyThermalRadianceResult.__dataclass_fields__},
             **{name: [] for name in energy_fields},
@@ -622,14 +638,22 @@ class ScopeGridRunner:
                 rss=batch[varmap["rss"]],
                 rbs=batch[varmap["rbs"]],
                 thermal_optics=ThermalOptics(
-                    rho_thermal=batch[varmap["rho_thermal"]] if "rho_thermal" in varmap and varmap["rho_thermal"] in batch else 0.01,
-                    tau_thermal=batch[varmap["tau_thermal"]] if "tau_thermal" in varmap and varmap["tau_thermal"] in batch else 0.01,
-                    rs_thermal=batch[varmap["rs_thermal"]] if "rs_thermal" in varmap and varmap["rs_thermal"] in batch else 0.06,
+                    rho_thermal=batch[varmap["rho_thermal"]]
+                    if "rho_thermal" in varmap and varmap["rho_thermal"] in batch
+                    else 0.01,
+                    tau_thermal=batch[varmap["tau_thermal"]]
+                    if "tau_thermal" in varmap and varmap["tau_thermal"] in batch
+                    else 0.01,
+                    rs_thermal=batch[varmap["rs_thermal"]]
+                    if "rs_thermal" in varmap and varmap["rs_thermal"] in batch
+                    else 0.06,
                 ),
                 soil_heat_method=soil_heat_method,
                 GAM=batch[varmap["GAM"]] if "GAM" in varmap and varmap["GAM"] in batch else 0.0,
                 Tsold=batch[varmap["Tsold"]] if "Tsold" in varmap and varmap["Tsold"] in batch else None,
-                dt_seconds=batch[varmap["dt_seconds"]] if "dt_seconds" in varmap and varmap["dt_seconds"] in batch else None,
+                dt_seconds=batch[varmap["dt_seconds"]]
+                if "dt_seconds" in varmap and varmap["dt_seconds"] in batch
+                else None,
             )
 
             result = self.energy_balance_model.solve_thermal(
@@ -675,10 +699,10 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        biochem_options: Optional[BiochemicalOptions] = None,
-        energy_options: Optional[EnergyBalanceOptions] = None,
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
+        biochem_options: BiochemicalOptions | None = None,
+        energy_options: EnergyBalanceOptions | None = None,
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
         soil_heat_method: int = 2,
     ) -> xr.Dataset:
         outputs = self.run_energy_balance_thermal(
@@ -697,8 +721,8 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        hotspot_var: Optional[str] = None,
-    ) -> Dict[str, torch.Tensor]:
+        hotspot_var: str | None = None,
+    ) -> dict[str, torch.Tensor]:
         outputs: dict[str, list[torch.Tensor]] = {name: [] for name in CanopyFluorescenceResult.__dataclass_fields__}
         for batch in _progress(data_module.iter_batches(), desc="fluorescence"):
             leaf_kwargs = self._leafbio_kwargs(batch, varmap)
@@ -734,7 +758,7 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        hotspot_var: Optional[str] = None,
+        hotspot_var: str | None = None,
     ) -> xr.Dataset:
         outputs = self.run_fluorescence(
             data_module,
@@ -748,11 +772,11 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        directional_tto: Optional[torch.Tensor] = None,
-        directional_psi: Optional[torch.Tensor] = None,
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
-    ) -> Dict[str, torch.Tensor]:
+        directional_tto: torch.Tensor | None = None,
+        directional_psi: torch.Tensor | None = None,
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
+    ) -> dict[str, torch.Tensor]:
         outputs: dict[str, list[torch.Tensor]] = {name: [] for name in ("LoF_",)}
         tto_angles, psi_angles = self._directional_angles(
             data_module,
@@ -798,10 +822,10 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        directional_tto: Optional[torch.Tensor] = None,
-        directional_psi: Optional[torch.Tensor] = None,
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
+        directional_tto: torch.Tensor | None = None,
+        directional_psi: torch.Tensor | None = None,
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
     ) -> xr.Dataset:
         tto_angles, psi_angles = self._directional_angles(
             data_module,
@@ -831,11 +855,13 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
-    ) -> Dict[str, torch.Tensor]:
-        outputs: dict[str, list[torch.Tensor]] = {name: [] for name in CanopyFluorescenceProfileResult.__dataclass_fields__}
-        expected_layer_count: Optional[int] = None
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
+    ) -> dict[str, torch.Tensor]:
+        outputs: dict[str, list[torch.Tensor]] = {
+            name: [] for name in CanopyFluorescenceProfileResult.__dataclass_fields__
+        }
+        expected_layer_count: int | None = None
         for batch in _progress(data_module.iter_batches(), desc="fluorescence-profiles"):
             leaf_kwargs = self._leafbio_kwargs(batch, varmap)
             leafbio = LeafBioBatch(**leaf_kwargs)
@@ -878,8 +904,8 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
     ) -> xr.Dataset:
         outputs = self.run_fluorescence_profiles(
             data_module,
@@ -907,9 +933,9 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
-    ) -> Dict[str, torch.Tensor]:
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
+    ) -> dict[str, torch.Tensor]:
         outputs: dict[str, list[torch.Tensor]] = {name: [] for name in CanopyFluorescenceResult.__dataclass_fields__}
         for batch in _progress(data_module.iter_batches(), desc="layered-fluorescence"):
             leaf_kwargs = self._leafbio_kwargs(batch, varmap)
@@ -952,8 +978,8 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
     ) -> xr.Dataset:
         outputs = self.run_layered_fluorescence(
             data_module,
@@ -968,9 +994,9 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
-    ) -> Dict[str, torch.Tensor]:
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
+    ) -> dict[str, torch.Tensor]:
         outputs: dict[str, list[torch.Tensor]] = {name: [] for name in CanopyThermalRadianceResult.__dataclass_fields__}
         for batch in _progress(data_module.iter_batches(), desc="thermal"):
             lai = batch[varmap["LAI"]]
@@ -986,9 +1012,15 @@ class ScopeGridRunner:
             else:
                 hotspot = torch.full_like(lai, self.default_hotspot)
             thermal_optics = ThermalOptics(
-                rho_thermal=batch[varmap["rho_thermal"]] if "rho_thermal" in varmap and varmap["rho_thermal"] in batch else 0.01,
-                tau_thermal=batch[varmap["tau_thermal"]] if "tau_thermal" in varmap and varmap["tau_thermal"] in batch else 0.01,
-                rs_thermal=batch[varmap["rs_thermal"]] if "rs_thermal" in varmap and varmap["rs_thermal"] in batch else 0.06,
+                rho_thermal=batch[varmap["rho_thermal"]]
+                if "rho_thermal" in varmap and varmap["rho_thermal"] in batch
+                else 0.01,
+                tau_thermal=batch[varmap["tau_thermal"]]
+                if "tau_thermal" in varmap and varmap["tau_thermal"] in batch
+                else 0.01,
+                rs_thermal=batch[varmap["rs_thermal"]]
+                if "rs_thermal" in varmap and varmap["rs_thermal"] in batch
+                else 0.06,
             )
 
             result = self.thermal_model(
@@ -1014,8 +1046,8 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
     ) -> xr.Dataset:
         outputs = self.run_thermal(
             data_module,
@@ -1030,11 +1062,11 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        directional_tto: Optional[torch.Tensor] = None,
-        directional_psi: Optional[torch.Tensor] = None,
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
-    ) -> Dict[str, torch.Tensor]:
+        directional_tto: torch.Tensor | None = None,
+        directional_psi: torch.Tensor | None = None,
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
+    ) -> dict[str, torch.Tensor]:
         outputs: dict[str, list[torch.Tensor]] = {name: [] for name in ("Lot_", "BrightnessT")}
         tto_angles, psi_angles = self._directional_angles(
             data_module,
@@ -1054,9 +1086,15 @@ class ScopeGridRunner:
             else:
                 hotspot = torch.full_like(lai, self.default_hotspot)
             thermal_optics = ThermalOptics(
-                rho_thermal=batch[varmap["rho_thermal"]] if "rho_thermal" in varmap and varmap["rho_thermal"] in batch else 0.01,
-                tau_thermal=batch[varmap["tau_thermal"]] if "tau_thermal" in varmap and varmap["tau_thermal"] in batch else 0.01,
-                rs_thermal=batch[varmap["rs_thermal"]] if "rs_thermal" in varmap and varmap["rs_thermal"] in batch else 0.06,
+                rho_thermal=batch[varmap["rho_thermal"]]
+                if "rho_thermal" in varmap and varmap["rho_thermal"] in batch
+                else 0.01,
+                tau_thermal=batch[varmap["tau_thermal"]]
+                if "tau_thermal" in varmap and varmap["tau_thermal"] in batch
+                else 0.01,
+                rs_thermal=batch[varmap["rs_thermal"]]
+                if "rs_thermal" in varmap and varmap["rs_thermal"] in batch
+                else 0.06,
             )
 
             result = self.thermal_model.directional(
@@ -1082,10 +1120,10 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        directional_tto: Optional[torch.Tensor] = None,
-        directional_psi: Optional[torch.Tensor] = None,
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
+        directional_tto: torch.Tensor | None = None,
+        directional_psi: torch.Tensor | None = None,
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
     ) -> xr.Dataset:
         tto_angles, psi_angles = self._directional_angles(
             data_module,
@@ -1115,11 +1153,11 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
-    ) -> Dict[str, torch.Tensor]:
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
+    ) -> dict[str, torch.Tensor]:
         outputs: dict[str, list[torch.Tensor]] = {name: [] for name in CanopyThermalProfileResult.__dataclass_fields__}
-        expected_layer_count: Optional[int] = None
+        expected_layer_count: int | None = None
         for batch in _progress(data_module.iter_batches(), desc="thermal-profiles"):
             lai = batch[varmap["LAI"]]
             tts = batch[varmap["tts"]]
@@ -1134,9 +1172,15 @@ class ScopeGridRunner:
             else:
                 hotspot = torch.full_like(lai, self.default_hotspot)
             thermal_optics = ThermalOptics(
-                rho_thermal=batch[varmap["rho_thermal"]] if "rho_thermal" in varmap and varmap["rho_thermal"] in batch else 0.01,
-                tau_thermal=batch[varmap["tau_thermal"]] if "tau_thermal" in varmap and varmap["tau_thermal"] in batch else 0.01,
-                rs_thermal=batch[varmap["rs_thermal"]] if "rs_thermal" in varmap and varmap["rs_thermal"] in batch else 0.06,
+                rho_thermal=batch[varmap["rho_thermal"]]
+                if "rho_thermal" in varmap and varmap["rho_thermal"] in batch
+                else 0.01,
+                tau_thermal=batch[varmap["tau_thermal"]]
+                if "tau_thermal" in varmap and varmap["tau_thermal"] in batch
+                else 0.01,
+                rs_thermal=batch[varmap["rs_thermal"]]
+                if "rs_thermal" in varmap and varmap["rs_thermal"] in batch
+                else 0.06,
             )
 
             result = self.thermal_model.profiles(
@@ -1163,8 +1207,8 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
     ) -> xr.Dataset:
         outputs = self.run_thermal_profiles(
             data_module,
@@ -1192,11 +1236,11 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        scope_options: Optional[Mapping[str, object]] = None,
-        directional_tto: Optional[torch.Tensor] = None,
-        directional_psi: Optional[torch.Tensor] = None,
-        hotspot_var: Optional[str] = None,
-        nlayers: Optional[int] = None,
+        scope_options: Mapping[str, object] | None = None,
+        directional_tto: torch.Tensor | None = None,
+        directional_psi: torch.Tensor | None = None,
+        hotspot_var: str | None = None,
+        nlayers: int | None = None,
     ) -> xr.Dataset:
         calc_directional = self._scope_option_flag(data_module, scope_options, "calc_directional")
         calc_vert_profiles = self._scope_option_flag(data_module, scope_options, "calc_vert_profiles")
@@ -1364,7 +1408,7 @@ class ScopeGridRunner:
         *,
         product: str,
         components: Sequence[str],
-        scope_options: Optional[Mapping[str, object]],
+        scope_options: Mapping[str, object] | None,
     ) -> xr.Dataset:
         if len(datasets) != len(components):
             raise ValueError("datasets and components must have matching lengths")
@@ -1446,8 +1490,8 @@ class ScopeGridRunner:
                 return tensor.squeeze(1)
         return tensor
 
-    def _output_coords(self, layer_count: Optional[int]) -> Dict[str, torch.Tensor]:
-        coords: Dict[str, torch.Tensor] = {
+    def _output_coords(self, layer_count: int | None) -> dict[str, torch.Tensor]:
+        coords: dict[str, torch.Tensor] = {
             "wavelength": self.fluspect.spectral.wlP,
             "thermal_wavelength": default_thermal_wavelengths(
                 device=self.fluspect.device,
@@ -1470,7 +1514,7 @@ class ScopeGridRunner:
         self,
         data_module: ScopeGridDataModule,
         outputs: Mapping[str, torch.Tensor],
-    ) -> Optional[int]:
+    ) -> int | None:
         if "layer" in data_module.dataset.coords:
             return int(data_module.dataset.coords["layer"].size)
 
@@ -1517,7 +1561,7 @@ class ScopeGridRunner:
         name: str,
         tensor: torch.Tensor,
         *,
-        layer_count: Optional[int],
+        layer_count: int | None,
     ) -> tuple[str, ...]:
         trailing = tuple(int(size) for size in torch.as_tensor(tensor).shape[1:])
         if not trailing:
@@ -1576,15 +1620,17 @@ class ScopeGridRunner:
 
         return tuple(f"{name}_dim_{idx}" for idx in range(1, len(trailing) + 1))
 
-    def _leafbio_kwargs(self, batch: Mapping[str, torch.Tensor], varmap: Mapping[str, str]) -> Dict[str, torch.Tensor]:
-        kwargs: Dict[str, torch.Tensor] = {}
+    def _leafbio_kwargs(self, batch: Mapping[str, torch.Tensor], varmap: Mapping[str, str]) -> dict[str, torch.Tensor]:
+        kwargs: dict[str, torch.Tensor] = {}
         for field in LeafBioBatch.__dataclass_fields__:
             if field in varmap and varmap[field] in batch:
                 kwargs[field] = batch[varmap[field]]
         return kwargs
 
-    def _biochemistry_kwargs(self, batch: Mapping[str, torch.Tensor], varmap: Mapping[str, str]) -> Dict[str, torch.Tensor]:
-        kwargs: Dict[str, torch.Tensor] = {}
+    def _biochemistry_kwargs(
+        self, batch: Mapping[str, torch.Tensor], varmap: Mapping[str, str]
+    ) -> dict[str, torch.Tensor]:
+        kwargs: dict[str, torch.Tensor] = {}
         for field in LeafBiochemistryInputs.__dataclass_fields__:
             if field == "TDP":
                 continue
@@ -1619,8 +1665,8 @@ class ScopeGridRunner:
         data_module: ScopeGridDataModule,
         *,
         varmap: Mapping[str, str],
-        directional_tto: Optional[torch.Tensor],
-        directional_psi: Optional[torch.Tensor],
+        directional_tto: torch.Tensor | None,
+        directional_psi: torch.Tensor | None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if directional_tto is not None or directional_psi is not None:
             if directional_tto is None or directional_psi is None:
@@ -1652,7 +1698,7 @@ class ScopeGridRunner:
             raise ValueError("Directional angle arrays must not be empty")
         return tensor
 
-    def _workflow_reflectance_varmap(self, varmap: Mapping[str, str]) -> Dict[str, str]:
+    def _workflow_reflectance_varmap(self, varmap: Mapping[str, str]) -> dict[str, str]:
         resolved = dict(varmap)
         if "Esun_sw" in varmap:
             resolved["Esun_"] = varmap["Esun_sw"]
@@ -1663,7 +1709,7 @@ class ScopeGridRunner:
     def _scope_option_flag(
         self,
         data_module: ScopeGridDataModule,
-        scope_options: Optional[Mapping[str, object]],
+        scope_options: Mapping[str, object] | None,
         name: str,
         *,
         default: bool = False,
@@ -1690,7 +1736,7 @@ class ScopeGridRunner:
             raise ValueError("Profile outputs must include a layer-interface axis")
         return int(tensor.shape[1]) - 1
 
-    def _accumulate_profile_layer_count(self, expected: Optional[int], value: torch.Tensor) -> int:
+    def _accumulate_profile_layer_count(self, expected: int | None, value: torch.Tensor) -> int:
         current = self._profile_layer_count_from_tensor(value)
         if expected is not None and current != expected:
             raise ValueError("Profile workflows require a uniform layer count across all batches")
@@ -1698,13 +1744,13 @@ class ScopeGridRunner:
 
     def _layer_count(
         self,
-        nlayers: Optional[int],
+        nlayers: int | None,
         *,
-        etau: Optional[torch.Tensor],
-        etah: Optional[torch.Tensor],
-        Tcu: Optional[torch.Tensor],
-        Tch: Optional[torch.Tensor],
-    ) -> Optional[int]:
+        etau: torch.Tensor | None,
+        etah: torch.Tensor | None,
+        Tcu: torch.Tensor | None,
+        Tch: torch.Tensor | None,
+    ) -> int | None:
         for value in (etau, etah, Tcu, Tch):
             if value is None:
                 continue
