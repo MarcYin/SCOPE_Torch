@@ -20,6 +20,21 @@ class SimulationConfig:
     require_grad: bool = False
     extra_options: dict[str, float] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        min_y, min_x, max_y, max_x = self.roi_bounds
+        if min_y > max_y or min_x > max_x:
+            raise ValueError(
+                f"roi_bounds min must not exceed max: got ({min_y}, {min_x}, {max_y}, {max_x})"
+            )
+        if self.start_time > self.end_time:
+            raise ValueError(
+                f"start_time ({self.start_time}) must not be after end_time ({self.end_time})"
+            )
+        if self.chunk_size is not None and self.chunk_size <= 0:
+            raise ValueError(f"chunk_size must be positive, got {self.chunk_size}")
+        # Validate that the device string is parseable by PyTorch
+        torch.device(self.device)
+
     def torch_device(self) -> torch.device:
         return torch.device(self.device)
 

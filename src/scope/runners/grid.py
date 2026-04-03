@@ -1,10 +1,25 @@
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from typing import Dict, Mapping, Optional, Sequence
 
 import torch
 import xarray as xr
+
+logger = logging.getLogger(__name__)
+
+try:
+    from tqdm.auto import tqdm as _tqdm
+except ImportError:  # pragma: no cover
+    _tqdm = None
+
+
+def _progress(iterable, total=None, desc=None, disable=False):
+    """Thin wrapper: use tqdm when available, else iterate silently."""
+    if _tqdm is not None and not disable:
+        return _tqdm(iterable, total=total, desc=desc)
+    return iterable
 
 from ..biochem import BiochemicalOptions, LeafBiochemistryInputs, LeafBiochemistryResult
 from ..canopy.fluorescence import (
@@ -135,7 +150,7 @@ class ScopeGridRunner:
         nlayers: Optional[int] = None,
     ) -> Dict[str, torch.Tensor]:
         outputs: dict[str, list[torch.Tensor]] = {name: [] for name in CanopyReflectanceResult.__dataclass_fields__}
-        for batch in data_module.iter_batches():
+        for batch in _progress(data_module.iter_batches(), desc="reflectance"):
             leaf_kwargs = self._leafbio_kwargs(batch, varmap)
             leafbio = LeafBioBatch(**leaf_kwargs)
             lai = batch[varmap["LAI"]]
@@ -196,7 +211,7 @@ class ScopeGridRunner:
             directional_tto=directional_tto,
             directional_psi=directional_psi,
         )
-        for batch in data_module.iter_batches():
+        for batch in _progress(data_module.iter_batches(), desc="directional-reflectance"):
             leaf_kwargs = self._leafbio_kwargs(batch, varmap)
             leafbio = LeafBioBatch(**leaf_kwargs)
             lai = batch[varmap["LAI"]]
@@ -269,7 +284,7 @@ class ScopeGridRunner:
     ) -> Dict[str, torch.Tensor]:
         outputs: dict[str, list[torch.Tensor]] = {name: [] for name in CanopyRadiationProfileResult.__dataclass_fields__}
         expected_layer_count: Optional[int] = None
-        for batch in data_module.iter_batches():
+        for batch in _progress(data_module.iter_batches(), desc="reflectance-profiles"):
             leaf_kwargs = self._leafbio_kwargs(batch, varmap)
             leafbio = LeafBioBatch(**leaf_kwargs)
             lai = batch[varmap["LAI"]]
@@ -354,7 +369,7 @@ class ScopeGridRunner:
             **{f"sunlit_{name}": [] for name in physiology_fields},
             **{f"shaded_{name}": [] for name in physiology_fields},
         }
-        for batch in data_module.iter_batches():
+        for batch in _progress(data_module.iter_batches(), desc="biochemical-fluorescence"):
             leaf_kwargs = self._leafbio_kwargs(batch, varmap)
             leafbio = LeafBioBatch(**leaf_kwargs)
             biochem = LeafBiochemistryInputs(**self._biochemistry_kwargs(batch, varmap))
@@ -440,7 +455,7 @@ class ScopeGridRunner:
             **{f"sunlit_{name}": [] for name in physiology_fields},
             **{f"shaded_{name}": [] for name in physiology_fields},
         }
-        for batch in data_module.iter_batches():
+        for batch in _progress(data_module.iter_batches(), desc="energy-balance-fluorescence"):
             leaf_kwargs = self._leafbio_kwargs(batch, varmap)
             leafbio = LeafBioBatch(**leaf_kwargs)
             biochem = LeafBiochemistryInputs(**self._biochemistry_kwargs(batch, varmap))
@@ -568,7 +583,7 @@ class ScopeGridRunner:
             **{f"sunlit_{name}": [] for name in physiology_fields},
             **{f"shaded_{name}": [] for name in physiology_fields},
         }
-        for batch in data_module.iter_batches():
+        for batch in _progress(data_module.iter_batches(), desc="energy-balance-thermal"):
             leaf_kwargs = self._leafbio_kwargs(batch, varmap)
             leafbio = LeafBioBatch(**leaf_kwargs)
             biochem = LeafBiochemistryInputs(**self._biochemistry_kwargs(batch, varmap))
@@ -685,7 +700,7 @@ class ScopeGridRunner:
         hotspot_var: Optional[str] = None,
     ) -> Dict[str, torch.Tensor]:
         outputs: dict[str, list[torch.Tensor]] = {name: [] for name in CanopyFluorescenceResult.__dataclass_fields__}
-        for batch in data_module.iter_batches():
+        for batch in _progress(data_module.iter_batches(), desc="fluorescence"):
             leaf_kwargs = self._leafbio_kwargs(batch, varmap)
             leafbio = LeafBioBatch(**leaf_kwargs)
             lai = batch[varmap["LAI"]]
@@ -745,7 +760,7 @@ class ScopeGridRunner:
             directional_tto=directional_tto,
             directional_psi=directional_psi,
         )
-        for batch in data_module.iter_batches():
+        for batch in _progress(data_module.iter_batches(), desc="directional-fluorescence"):
             leaf_kwargs = self._leafbio_kwargs(batch, varmap)
             leafbio = LeafBioBatch(**leaf_kwargs)
             lai = batch[varmap["LAI"]]
@@ -821,7 +836,7 @@ class ScopeGridRunner:
     ) -> Dict[str, torch.Tensor]:
         outputs: dict[str, list[torch.Tensor]] = {name: [] for name in CanopyFluorescenceProfileResult.__dataclass_fields__}
         expected_layer_count: Optional[int] = None
-        for batch in data_module.iter_batches():
+        for batch in _progress(data_module.iter_batches(), desc="fluorescence-profiles"):
             leaf_kwargs = self._leafbio_kwargs(batch, varmap)
             leafbio = LeafBioBatch(**leaf_kwargs)
             lai = batch[varmap["LAI"]]
@@ -896,7 +911,7 @@ class ScopeGridRunner:
         nlayers: Optional[int] = None,
     ) -> Dict[str, torch.Tensor]:
         outputs: dict[str, list[torch.Tensor]] = {name: [] for name in CanopyFluorescenceResult.__dataclass_fields__}
-        for batch in data_module.iter_batches():
+        for batch in _progress(data_module.iter_batches(), desc="layered-fluorescence"):
             leaf_kwargs = self._leafbio_kwargs(batch, varmap)
             leafbio = LeafBioBatch(**leaf_kwargs)
             lai = batch[varmap["LAI"]]
@@ -957,7 +972,7 @@ class ScopeGridRunner:
         nlayers: Optional[int] = None,
     ) -> Dict[str, torch.Tensor]:
         outputs: dict[str, list[torch.Tensor]] = {name: [] for name in CanopyThermalRadianceResult.__dataclass_fields__}
-        for batch in data_module.iter_batches():
+        for batch in _progress(data_module.iter_batches(), desc="thermal"):
             lai = batch[varmap["LAI"]]
             tts = batch[varmap["tts"]]
             tto = batch[varmap["tto"]]
@@ -1027,7 +1042,7 @@ class ScopeGridRunner:
             directional_tto=directional_tto,
             directional_psi=directional_psi,
         )
-        for batch in data_module.iter_batches():
+        for batch in _progress(data_module.iter_batches(), desc="directional-thermal"):
             lai = batch[varmap["LAI"]]
             tts = batch[varmap["tts"]]
             Tcu = batch[varmap["Tcu"]]
@@ -1105,7 +1120,7 @@ class ScopeGridRunner:
     ) -> Dict[str, torch.Tensor]:
         outputs: dict[str, list[torch.Tensor]] = {name: [] for name in CanopyThermalProfileResult.__dataclass_fields__}
         expected_layer_count: Optional[int] = None
-        for batch in data_module.iter_batches():
+        for batch in _progress(data_module.iter_batches(), desc="thermal-profiles"):
             lai = batch[varmap["LAI"]]
             tts = batch[varmap["tts"]]
             tto = batch[varmap["tto"]]

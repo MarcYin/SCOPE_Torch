@@ -106,6 +106,7 @@ class CanopyThermalRadianceModel:
         )
         return cls(reflectance)
 
+    @torch.inference_mode()
     def __call__(
         self,
         lai: torch.Tensor,
@@ -422,7 +423,10 @@ class CanopyThermalRadianceModel:
         )
 
     def _planck(self, wavelength_nm: torch.Tensor, temperature_k: torch.Tensor, emissivity: torch.Tensor) -> torch.Tensor:
+        # First radiation constant c1 = 2*h*c^2 [W·m^2] (CODATA 2018),
+        # scaled for wavelength in nm → metre conversion in wavelength_term.
         c1 = torch.as_tensor(1.191066e-22, device=wavelength_nm.device, dtype=wavelength_nm.dtype)
+        # Second radiation constant c2 = h*c/k_B [μm·K] (CODATA 2018).
         c2 = torch.as_tensor(14388.33, device=wavelength_nm.device, dtype=wavelength_nm.dtype)
         wavelength_term = (wavelength_nm * 1e-9) ** -5
         exponent = c2 / ((wavelength_nm * 1e-3) * temperature_k)

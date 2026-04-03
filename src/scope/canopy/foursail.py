@@ -214,10 +214,13 @@ class FourSAILModel:
 
         sigb = ddb.unsqueeze(-1) * rho + ddf.unsqueeze(-1) * tau
         sigf = ddf.unsqueeze(-1) * rho + ddb.unsqueeze(-1) * tau
-        sigb = torch.clamp(sigb, min=1e-36)
-        sigf = torch.clamp(sigf, min=1e-36)
+        sigb = torch.clamp(sigb, min=torch.finfo(dtype).tiny)
+        sigf = torch.clamp(sigf, min=torch.finfo(dtype).tiny)
         att = 1.0 - sigf
-        m = torch.sqrt(torch.clamp(att**2 - sigb**2, min=1e-36))
+        # Floor must exceed dtype smallest-normal to avoid denormals but stay
+        # well below physical signal range (~1e-6 for reflectance).
+        _stability_floor = torch.finfo(dtype).tiny
+        m = torch.sqrt(torch.clamp(att**2 - sigb**2, min=_stability_floor))
         sb = sdb.unsqueeze(-1) * rho + sdf.unsqueeze(-1) * tau
         sf = sdf.unsqueeze(-1) * rho + sdb.unsqueeze(-1) * tau
         vb = dob.unsqueeze(-1) * rho + dof.unsqueeze(-1) * tau
@@ -343,27 +346,15 @@ class FourSAILModel:
         lidf: torch.Tensor,
         litab: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        batch = tts.shape[0]
-        n_angles = litab.shape[0]
-        device = tts.device
-        dtype = tts.dtype
-        chi_s = torch.zeros((batch, n_angles), device=device, dtype=dtype)
-        chi_o = torch.zeros_like(chi_s)
-        frho = torch.zeros_like(chi_s)
-        ftau = torch.zeros_like(chi_s)
-        for idx in range(n_angles):
-            angle = litab[idx]
-            chi_s[:, idx], chi_o[:, idx], frho[:, idx], ftau[:, idx] = self._volscatt(tts, tto, psi, angle)
+        chi_s, chi_o, frho, ftau = self._volscatt_vectorized(tts, tto, psi, litab)
         cts = torch.cos(torch.deg2rad(tts)).unsqueeze(-1).clamp(min=1e-6)
         cto = torch.cos(torch.deg2rad(tto)).unsqueeze(-1).clamp(min=1e-6)
-        cos_tts = cts
-        cos_tto = cto
-        sobli = frho * torch.pi / (cos_tts * cos_tto)
-        sofli = ftau * torch.pi / (cos_tts * cos_tto)
-        bfli = torch.cos(torch.deg2rad(litab)).to(device=device, dtype=dtype) ** 2
-        bfli = bfli.unsqueeze(0).expand(batch, -1)
-        ksli = chi_s / cos_tts
-        koli = chi_o / cos_tto
+        sobli = frho * torch.pi / (cts * cto)
+        sofli = ftau * torch.pi / (cts * cto)
+        bfli = torch.cos(torch.deg2rad(litab)).to(device=tts.device, dtype=tts.dtype) ** 2
+        bfli = bfli.unsqueeze(0).expand(tts.shape[0], -1)
+        ksli = chi_s / cts
+        koli = chi_o / cto
         ks = torch.sum(ksli * lidf, dim=-1)
         ko = torch.sum(koli * lidf, dim=-1)
         bf = torch.sum(bfli * lidf, dim=-1)
@@ -424,6 +415,64 @@ class FourSAILModel:
         ftau = torch.clamp((-(bt2) * T1 + T2) / denom, min=0.0)
         return chi_s, chi_o, frho, ftau
 
+    def _volscatt_vectorized(
+        self, tts: torch.Tensor, tto: torch.Tensor, psi: torch.Tensor, litab: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Vectorized volume scattering over all leaf inclination angles at once."""
+        # tts, tto, psi: (batch,)  litab: (n_angles,)
+        # Output shapes: (batch, n_angles)
+        tts_rad = torch.deg2rad(tts).unsqueeze(-1)   # (batch, 1)
+        tto_rad = torch.deg2rad(tto).unsqueeze(-1)
+        psi_rad = torch.deg2rad(psi).unsqueeze(-1)
+        ttl_rad = torch.deg2rad(litab.to(device=tts.device, dtype=tts.dtype)).unsqueeze(0)  # (1, n_angles)
+
+        cos_psi = torch.cos(psi_rad)
+        cos_ttli = torch.cos(ttl_rad)
+        sin_ttli = torch.sin(ttl_rad)
+        cos_tts = torch.cos(tts_rad)
+        sin_tts = torch.sin(tts_rad)
+        cos_tto = torch.cos(tto_rad)
+        sin_tto = torch.sin(tto_rad)
+
+        Cs = cos_ttli * cos_tts
+        Ss = sin_ttli * sin_tts
+        Co = cos_ttli * cos_tto
+        So = sin_ttli * sin_tto
+        As = torch.maximum(Ss, Cs)
+        Ao = torch.maximum(So, Co)
+
+        eps = 1e-9
+        cosbts = torch.where(torch.abs(Ss) > eps, -Cs / Ss.clamp(min=eps), torch.full_like(Ss, 5.0))
+        mask_bts = torch.abs(cosbts) < 1.0
+        bts = torch.where(mask_bts, torch.acos(cosbts.clamp(-1 + 1e-9, 1 - 1e-9)), torch.full_like(Ss, torch.pi))
+        ds = torch.where(mask_bts, Ss, Cs)
+
+        cosbto = torch.where(torch.abs(So) > eps, -Co / So.clamp(min=eps), torch.full_like(So, 5.0))
+        mask_bto = torch.abs(cosbto) < 1.0
+        bto = torch.where(mask_bto, torch.acos(cosbto.clamp(-1 + 1e-9, 1 - 1e-9)), torch.zeros_like(So))
+        do_term = torch.where(mask_bto, So, torch.zeros_like(So))
+        mask_high = (~mask_bto) & (tto.unsqueeze(-1) < 90)
+        bto = torch.where(mask_high, torch.full_like(So, torch.pi), bto)
+        do_term = torch.where(mask_high, Co, do_term)
+        mask_low = (~mask_bto) & (~mask_high)
+        bto = torch.where(mask_low, torch.zeros_like(So), bto)
+        do_term = torch.where(mask_low, -Co, do_term)
+
+        chi_s = 2.0 / torch.pi * ((bts - torch.pi * 0.5) * Cs + torch.sin(bts) * Ss)
+        chi_o = 2.0 / torch.pi * ((bto - torch.pi * 0.5) * Co + torch.sin(bto) * So)
+        delta1 = torch.abs(bts - bto)
+        delta2 = torch.pi - torch.abs(bts + bto - torch.pi)
+        Tot = psi_rad + delta1 + delta2
+        bt1 = torch.minimum(psi_rad, delta1)
+        bt3 = torch.maximum(psi_rad, delta2)
+        bt2 = Tot - bt1 - bt3
+        T1 = 2.0 * Cs * Co + Ss * So * cos_psi
+        T2 = torch.sin(bt2) * (2 * ds * do_term + Ss * So * torch.cos(bt1) * torch.cos(bt3))
+        denom = 2.0 * (torch.pi**2)
+        frho = torch.clamp(((torch.pi - bt2) * T1 + T2) / denom, min=0.0)
+        ftau = torch.clamp((-(bt2) * T1 + T2) / denom, min=0.0)
+        return chi_s, chi_o, frho, ftau
+
     def _jfunc1(self, k: torch.Tensor, l: torch.Tensor, lai: torch.Tensor) -> torch.Tensor:
         k_exp = k.unsqueeze(-1)
         t = lai.unsqueeze(-1)
@@ -433,6 +482,7 @@ class FourSAILModel:
         result = numerator / denom
         mask = torch.abs(denom) <= 1e-6
         avg = 0.5 * t * (torch.exp(-k_exp * t) + torch.exp(-l * t))
+        # Second-order Taylor correction for (exp(-a)-exp(-b))/(a-b) when a≈b.
         correction = 1.0 - (delta**2) / 12.0
         result = torch.where(mask, avg * correction, result)
         return result
@@ -521,8 +571,7 @@ class FourSAILModel:
         rinf = (att - m) / sigb
         rinf2 = rinf**2
         re = rinf * e1
-        denom = 1.0 - rinf2 * e2
-        denom = denom.clamp(min=1e-9)
+        denom = (1.0 - rinf2 * e2).clamp(min=1e-9)
         J1ks = self._jfunc1(ks, m, lai)
         J2ks = self._jfunc2(ks, m, lai)
         J1ko = self._jfunc1(ko, m, lai)
@@ -550,11 +599,11 @@ class FourSAILModel:
         T1 = Tv1 * (sf + sb * rinf)
         T2 = Tv2 * (sf * rinf + sb)
         T3 = (rdo * Qss + tdo * Pss) * rinf
-        rsod = (T1 + T2 - T3) / (1.0 - rinf2)
+        rsod = (T1 + T2 - T3) / (1.0 - rinf2).clamp(min=1e-9)
         T4 = Tv1 * (1.0 + rinf)
         T5 = Tv2 * (1.0 + rinf)
         T6 = (rdo * J2ks + tdo * J1ks) * (1.0 + rinf) * rinf
-        gammasod = (T4 + T5 - T6) / (1.0 - rinf2)
+        gammasod = (T4 + T5 - T6) / (1.0 - rinf2).clamp(min=1e-9)
         alf = torch.zeros_like(hotspot)
         mask = hotspot > 0
         alf[mask] = (dso[mask] / hotspot[mask]) * 2.0 / ((ks + ko)[mask])

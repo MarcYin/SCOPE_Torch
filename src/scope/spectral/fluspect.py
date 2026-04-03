@@ -286,6 +286,7 @@ class FluspectModel:
             xs = x_clamped[small]
             series = torch.zeros_like(xs)
             term = torch.ones_like(xs)
+            # 20 terms of the power-series expansion suffice for |x| <= 1.
             for n in range(1, 21):
                 term = term * (-xs / n)
                 series = series - term / n
@@ -295,9 +296,11 @@ class FluspectModel:
         if large.any():
             xl = x_clamped[large]
             b = xl + 1.0
-            c = torch.full_like(xl, 1e30)
+            # Large initial value for Lentz continued-fraction algorithm.
+            c = torch.full_like(xl, 1.0 / torch.finfo(xl.dtype).tiny)
             d = 1.0 / b
             h = d.clone()
+            # 100 iterations of Lentz continued fraction; converges for x > 1.
             for i in range(1, 101):
                 a = -(i * i)
                 b = b + 2.0

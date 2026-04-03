@@ -20,16 +20,18 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Atmospheric Science",
 ]
 dependencies = [
-    "torch>=2.2",
-    "numpy>=1.26",
+    "torch>=2.2,<3",
+    "numpy>=1.26,<3",
     "scipy>=1.11",
     "xarray>=2024.1",
     "rioxarray>=0.15",
-    "pandas>=2.2"
+    "pandas>=2.2",
+    "tqdm>=4.66"
 ]
 
 [project.urls]
@@ -46,8 +48,10 @@ scope-run = "scope.cli.run:main"
 dev = [
     "pytest>=8.1",
     "pytest-cov>=4.1",
-    "prosail>=2.0",
-    "rich>=13.7"
+    "pytest-xdist>=3.5",
+    "ruff>=0.4",
+    "mypy>=1.8",
+    "pre-commit>=3.5"
 ]
 docs = [
     "mkdocs>=1.6",
@@ -65,7 +69,26 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
-addopts = "-ra"
+addopts = "-ra --strict-markers"
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "gpu: marks tests that require a CUDA GPU",
+    "matlab: marks tests that require MATLAB",
+]

@@ -56,11 +56,13 @@ class HeatFluxResult:
 
 
 def saturated_vapor_pressure(temperature_c: torch.Tensor | float) -> torch.Tensor:
+    """Magnus formula for saturated vapor pressure [hPa] (Tetens, 1930)."""
     temp = torch.as_tensor(temperature_c)
     return 6.107 * torch.pow(torch.full_like(temp, 10.0), 7.5 * temp / (237.3 + temp))
 
 
 def slope_saturated_vapor_pressure(es: torch.Tensor | float, temperature_c: torch.Tensor | float) -> torch.Tensor:
+    """Analytical derivative of the Magnus formula [hPa/°C]."""
     es_tensor, temp = torch.broadcast_tensors(torch.as_tensor(es), torch.as_tensor(temperature_c))
     return es_tensor * 2.3026 * 7.5 * 237.3 / (237.3 + temp) ** 2
 
@@ -195,6 +197,7 @@ def heat_fluxes(
     Ca = Ca.to(device=device, dtype=dtype)
     Ci = Ci.to(device=device, dtype=dtype)
 
+    # Latent heat of vaporization [J/kg] (Henderson-Sellers, 1984).
     lambda_evap = (2.501 - 0.002361 * Tc) * 1e6
     ei = saturated_vapor_pressure(Tc).to(device=device, dtype=dtype)
     slope = slope_saturated_vapor_pressure(ei, Tc).to(device=device, dtype=dtype)
