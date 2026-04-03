@@ -31,6 +31,7 @@ nav:
       - Fluorescence: workflow-variables/fluorescence.md
       - Thermal: workflow-variables/thermal.md
       - Energy Balance: workflow-variables/energy-balance.md
+  - Leaf Angle Distribution: leaf-angle-distribution.md
   - Examples: examples.md
   - Production Notes: production-notes.md
   - Releasing: releasing.md
